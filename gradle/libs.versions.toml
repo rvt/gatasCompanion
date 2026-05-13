@@ -1,0 +1,97 @@
+[versions]
+agp = "8.9.3"
+android-compileSdk = "36"
+android-minSdk = "24"
+android-targetSdk = "35"
+androidx-activityCompose = "1.10.1"
+androidx-appcompat = "1.7.1"
+androidx-constraintlayout = "2.2.1"
+androidx-core-ktx = "1.16.0"
+androidx-espresso-core = "3.6.1"
+androidx-lifecycle = "2.9.1"
+androidx-material = "1.12.0"
+androidx-test-junit = "1.2.1"
+compose-multiplatform = "1.8.2"
+junit = "4.13.2"
+kotlin-version = "2.2.0"
+kable = "0.38.0"
+androidx-annotation = "1.9.1"
+mokoPermissions = "0.19.1"
+mokoGeo = "0.8.0"
+kotlinx-serialization-json = "1.9.0"
+jetbrainscompose-material3 = "1.8.2"
+#jetbrains-compose = "1.7.3"
+ktor-version = "3.2.2"
+composeIcons = "1.1.1"
+napierVersion = "2.7.1"
+kermitVersion = "2.0.6"
+koin-version = "3.5.6"
+gatas-library = "1.0.0"
+
+[libraries]
+#gatas-library = { module = "nl.rvantwisk.gatas:gatas-library", version.ref = "gatas-library" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin-version" }
+kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin-version" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidx-core-ktx" }
+androidx-test-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidx-test-junit" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "androidx-espresso-core" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "androidx-appcompat" }
+androidx-material = { group = "com.google.android.material", name = "material", version.ref = "androidx-material" }
+androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "androidx-constraintlayout" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
+androidx-lifecycle-viewmodel = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-viewmodel", version.ref = "androidx-lifecycle" }
+androidx-lifecycle-runtime-compose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
+androidx-lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
+
+# Added by me
+androidx-annotation = { module = "androidx.annotation:annotation", version.ref = "androidx-annotation" }
+kable = { module = "com.juul.kable:kable-core", version.ref = "kable" }
+moko-permissions = { module = "dev.icerock.moko:permissions", version.ref = "mokoPermissions" }
+moko-permissions-compose = { module = "dev.icerock.moko:permissions-compose", version.ref = "mokoPermissions" }
+moko-permissions-bluetooth = { module = "dev.icerock.moko:permissions-bluetooth", version.ref = "mokoPermissions" }
+moko-permissions-location = { module = "dev.icerock.moko:permissions-location", version.ref = "mokoPermissions" }
+moko-geo = { module = "dev.icerock.moko:geo", version.ref = "mokoGeo" }
+moko-geo-compose = { module = "dev.icerock.moko:geo-compose", version.ref = "mokoGeo" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "jetbrainscompose-material3" }
+ktor-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor-version" }
+ktor-contentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor-version" }
+ktor-logging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor-version" }
+ktor-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor-version" }
+ktor-android = { module = "io.ktor:ktor-client-android", version.ref = "ktor-version" }
+ktor-java = { module = "io.ktor:ktor-client-java", version.ref = "ktor-version" }
+ktor-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor-version" }
+ktor-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor-version" }
+ktor-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor-version" }
+ktor-network = { module = "io.ktor:ktor-network", version.ref = "ktor-version" }
+ktor-server-compression = { module = "io.ktor:ktor-server-compression", version.ref = "ktor-version" }
+ktor-client-compression = { module = "io.ktor:ktor-client-compression", version.ref = "ktor-version" }
+kotlinx-serialization-json = {module = "org.jetbrains.kotlinx:kotlinx-serialization-json",  version.ref = "kotlinx-serialization-json"}
+ktor-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor-version" }
+koin-ktor = { module = "io.insert-koin:koin-ktor", version.ref = "koin-version" }
+koin-logger-slf4j = { module = "io.insert-koin:koin-logger-slf4j", version.ref = "koin-version" }
+koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin-version" }
+
+composeIcons-cssGg = { module = "br.com.devsrsouza.compose.icons:css-gg", version.ref = "composeIcons" }
+composeIcons-weatherIcons = { module = "br.com.devsrsouza.compose.icons:erikflowers-weather-icons", version.ref = "composeIcons" }
+composeIcons-evaIcons = { module = "br.com.devsrsouza.compose.icons:eva-icons", version.ref = "composeIcons" }
+composeIcons-feather = { module = "br.com.devsrsouza.compose.icons:feather", version.ref = "composeIcons" }
+composeIcons-fontAwesome = { module = "br.com.devsrsouza.compose.icons:font-awesome", version.ref = "composeIcons" }
+composeIcons-lineAwesome = { module = "br.com.devsrsouza.compose.icons:line-awesome", version.ref = "composeIcons" }
+composeIcons-linea = { module = "br.com.devsrsouza.compose.icons:linea", version.ref = "composeIcons" }
+composeIcons-octicons = { module = "br.com.devsrsouza.compose.icons:octicons", version.ref = "composeIcons" }
+composeIcons-simpleIcons = { module = "br.com.devsrsouza.compose.icons:simple-icons", version.ref = "composeIcons" }
+composeIcons-tablerIcons = { module = "br.com.devsrsouza.compose.icons:tabler-icons", version.ref = "composeIcons" }
+#napier = { module = "io.github.aakira:napier", version.ref = "napierVersion" }
+kermit = { module = "co.touchlab:kermit", version.ref = "kermitVersion" }
+
+[plugins]
+androidApplication = { id = "com.android.application", version.ref = "agp" }
+androidLibrary = { id = "com.android.library", version.ref = "agp" }
+composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
+composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin-version" }
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin-version" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin-version" }
+
+[bundles]
+ktor = ["ktor-core", "ktor-contentNegotiation", "ktor-json", "ktor-logging"]

@@ -1,0 +1,4 @@
+# Local signing overrides for iOS development.
+# Copy this file to Config.local.xcconfig and replace the placeholder Team ID.
+
+TEAM_ID=YOUR_TEAM_ID_HERE

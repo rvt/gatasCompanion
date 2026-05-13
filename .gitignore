@@ -1,0 +1,35 @@
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+build/
+**/build/
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+
+# Android / native build outputs
+.externalNativeBuild/
+.cxx/
+captures/
+
+# Local machine config
+local.properties
+iosApp/Configuration/Config.local.xcconfig
+
+# iOS / Xcode
+iosApp/Pods/
+iosApp/Podfile.lock
+iosApp/iosApp.xcodeproj/xcuserdata/
+iosApp/iosApp.xcworkspace/xcuserdata/
+iosApp/iosApp.xcodeproj/project.xcworkspace/
+iosApp/iosApp.xcodeproj/xcshareddata/
+iosApp/iosApp.xcworkspace/
+
+
+clean
+cleanBuild
+old/

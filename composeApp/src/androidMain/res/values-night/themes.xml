@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.GaTasCompanion"  parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <!-- Can customize differently here if needed -->
+    </style>
+</resources>

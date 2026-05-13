@@ -1,0 +1,167 @@
+#!/bin/bash
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+XCODE_PROJECT="${XCODE_PROJECT:-$PROJECT_DIR/iosApp/iosApp.xcodeproj}"
+SCHEME="${SCHEME:-iosApp}"
+CONFIGURATION="${CONFIGURATION:-Debug}"
+DERIVED_DATA="${DERIVED_DATA:-/tmp/OpenAceDerivedData}"
+SDK="${SDK:-iphoneos}"
+INSTALL="${INSTALL:-1}"
+TEAM_ID="${DEVELOPMENT_TEAM:-}"
+DEVICE_ID="${IOS_DEPLOY_DEVICE_ID:-}"
+
+usage() {
+  cat <<'EOF'
+Usage: ./deployIos [options]
+
+Builds the iOS app with xcodebuild and optionally installs it on a connected iPhone.
+
+Options:
+  --configuration Debug|Release   Build configuration (default: Debug)
+  --derived-data PATH             DerivedData location (default: /tmp/OpenAceDerivedData)
+  --project PATH                  Xcode project path (default: ./iosApp/iosApp.xcodeproj)
+  --scheme NAME                   Xcode scheme (default: iosApp)
+  --device UDID                   Install to a specific device with ios-deploy
+  --no-install                    Build only, do not install to a device
+  --team-id TEAM_ID               Override DEVELOPMENT_TEAM for signing
+  -h, --help                      Show this help text
+
+Environment variables:
+  CONFIGURATION, DERIVED_DATA, XCODE_PROJECT, SCHEME, IOS_DEPLOY_DEVICE_ID,
+  DEVELOPMENT_TEAM, INSTALL
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --configuration)
+      CONFIGURATION="$2"
+      shift 2
+      ;;
+    --derived-data)
+      DERIVED_DATA="$2"
+      shift 2
+      ;;
+    --project)
+      XCODE_PROJECT="$2"
+      shift 2
+      ;;
+    --scheme)
+      SCHEME="$2"
+      shift 2
+      ;;
+    --device)
+      DEVICE_ID="$2"
+      shift 2
+      ;;
+    --no-install)
+      INSTALL=0
+      shift
+      ;;
+    --team-id)
+      TEAM_ID="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+mkdir -p "$DERIVED_DATA"
+
+if [[ -z "$TEAM_ID" ]]; then
+  for candidate in \
+    "$PROJECT_DIR/iosApp/Configuration/Config.local.xcconfig" \
+    "$PROJECT_DIR/iosApp/Configuration/Config.xcconfig"
+  do
+    if [[ -f "$candidate" ]]; then
+      TEAM_ID="$(rg -m1 -o '^TEAM_ID[[:space:]]*=[[:space:]]*[A-Z0-9]+' "$candidate" 2>/dev/null | sed 's/.*= *//' || true)"
+      if [[ -n "$TEAM_ID" && "$TEAM_ID" != "YOUR_TEAM_ID_HERE" ]]; then
+        break
+      fi
+      TEAM_ID=""
+    fi
+  done
+fi
+
+if [[ -z "$TEAM_ID" ]]; then
+  echo "Unable to determine DEVELOPMENT_TEAM." >&2
+  echo "Copy iosApp/Configuration/Config.local.xcconfig.example to Config.local.xcconfig and set TEAM_ID, or pass DEVELOPMENT_TEAM=YOUR_TEAM_ID." >&2
+  exit 2
+fi
+
+build_args=(
+  -project "$XCODE_PROJECT"
+  -scheme "$SCHEME"
+  -configuration "$CONFIGURATION"
+  -sdk "$SDK"
+  -destination "generic/platform=iOS"
+  -derivedDataPath "$DERIVED_DATA"
+  -allowProvisioningUpdates
+)
+
+if [[ -n "$TEAM_ID" ]]; then
+  build_args+=(DEVELOPMENT_TEAM="$TEAM_ID")
+fi
+
+echo "Using Apple Team ID: $TEAM_ID"
+build_args+=(build)
+
+echo "Building $SCHEME ($CONFIGURATION) for iPhone..."
+xcodebuild "${build_args[@]}"
+
+APP_DIR="$DERIVED_DATA/Build/Products/${CONFIGURATION}-iphoneos"
+APP_PATH="$(find "$APP_DIR" -maxdepth 1 -name '*.app' -print -quit 2>/dev/null || true)"
+
+if [[ -z "$APP_PATH" ]]; then
+  echo "Build succeeded, but no .app was found under $APP_DIR" >&2
+  exit 1
+fi
+
+echo "Built app: $APP_PATH"
+
+if [[ "$INSTALL" != "1" ]]; then
+  exit 0
+fi
+
+if ! command -v ios-deploy >/dev/null 2>&1; then
+  cat <<EOF
+ios-deploy is not installed.
+Install it with:
+  brew install ios-deploy
+
+Then run:
+  ios-deploy --bundle "$APP_PATH"
+EOF
+  exit 0
+fi
+
+deploy_args=(--bundle "$APP_PATH")
+if [[ -n "$DEVICE_ID" ]]; then
+  deploy_args+=(--id "$DEVICE_ID")
+fi
+
+echo "Installing to device with ios-deploy..."
+set +e
+deploy_output="$(ios-deploy "${deploy_args[@]}" 2>&1)"
+deploy_status=$?
+set -e
+printf '%s\n' "$deploy_output"
+
+if [[ $deploy_status -ne 0 ]]; then
+  if printf '%s' "$deploy_output" | rg -q "does not recognize this host"; then
+    cat <<'EOF' >&2
+The iPhone has not trusted this Mac yet.
+Unlock the iPhone and accept the trust prompt, or disconnect/reconnect the cable while the phone is unlocked.
+EOF
+  fi
+  exit $deploy_status
+fi
