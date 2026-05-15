@@ -12,6 +12,11 @@ class RootStore {
     fun landing() = setState { copy(screen = Screen.Landing, connectTo = null) }
     fun connected(id: String) = setState { copy(screen = Screen.Connected, connectTo = id) }
     fun blueTooth() = setState { copy(screen = Screen.BlueTooth, connectTo = null) }
+    fun settings() = setState { copy(screen = Screen.Settings, connectTo = null) }
+    fun setGdl90BridgeEnabled(enabled: Boolean) {
+        Gdl90BridgeSettings.setEnabled(enabled)
+        setState { copy(gdl90BridgeEnabled = enabled) }
+    }
 
 
     fun deleteItem(device: GaTasDevice) =
@@ -33,7 +38,8 @@ class RootStore {
         RootState(
             devices = setOf(),
             screen = Screen.Landing,
-            airplanesLiveApiKey = ""
+            airplanesLiveApiKey = "",
+            gdl90BridgeEnabled = Gdl90BridgeSettings.isEnabled()
         )
 
     private inline fun setState(update: RootState.() -> RootState) {
@@ -44,13 +50,15 @@ class RootStore {
         val devices: Set<GaTasDevice>,
         val screen: Screen,
         val airplanesLiveApiKey: String,
+        val gdl90BridgeEnabled: Boolean,
         val connectTo: String? = null
     )
 
     enum class Screen {
         Landing,
         Connected,
-        BlueTooth
+        BlueTooth,
+        Settings
     }
 
     // https://github.com/terrakok/kmp-awesome

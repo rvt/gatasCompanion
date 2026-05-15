@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 //import androidx.compose.material.icons.outlined.Home
 //import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -22,9 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import compose.icons.LineAwesomeIcons
-import compose.icons.lineawesomeicons.CogSolid
-import compose.icons.lineawesomeicons.HomeSolid
 import dev.icerock.moko.permissions.PermissionsController
 import dev.icerock.moko.permissions.compose.BindEffect
 import nl.rvt.gatas.companion.background.BridgeBackgroundComponent
@@ -62,22 +58,19 @@ fun RootContent(
 
     AppTheme {
         Scaffold(
-
             bottomBar = {
                 if (state.screen != Screen.Connected) {
                     NavigationBar {
                         NavigationBarItem(
-                            icon = { Icon(LineAwesomeIcons.HomeSolid, contentDescription = "Home") },
-                            //                      icon = { Icon(Icons.Outlined.Home, contentDescription = "Home") },
+                            icon = { Text("Home") },
                             selected = state.screen == Screen.Landing,
                             onClick = model::landing,
                             label = { Text("Home") }
                         )
                         NavigationBarItem(
-                            icon = { Icon(LineAwesomeIcons.CogSolid, contentDescription = "Home") },
-                            //                        icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
-                            selected = true,
-                            onClick = model::landing,
+                            icon = { Text("Settings") },
+                            selected = state.screen == Screen.Settings,
+                            onClick = model::settings,
                             label = { Text("Settings") }
                         )
                     }
@@ -113,6 +106,11 @@ fun RootContent(
                             },
                         )
                     }
+
+                    Screen.Settings -> SettingsScreen(
+                        gdl90BridgeEnabled = state.gdl90BridgeEnabled,
+                        onGdl90BridgeEnabledChanged = model::setGdl90BridgeEnabled,
+                    )
 
                     Screen.Connected -> ConnectScreen(
                         bridgeStatus = bridgeStatus,

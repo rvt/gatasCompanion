@@ -150,6 +150,17 @@ fun ConnectScreen(
             }
         }
 
+        if (status.gdl90BridgeEnabled) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+            ) {
+                Gdl90BridgeActivity(status = status)
+            }
+        }
+
         Spacer(modifier = Modifier.weight(1f))
 
         Button(
@@ -165,6 +176,53 @@ fun ConnectScreen(
         ) {
             Text("Stop bridge")
         }
+    }
+}
+
+@Composable
+private fun Gdl90BridgeActivity(status: BridgeStatus) {
+    val active = status.gdl90FramesBridged > 0
+    val textColor = if (active) {
+        Color(0xFF2E7D32)
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ActivityPropeller(
+            pulseTick = status.gdl90ActivityTick,
+            color = textColor,
+            active = active,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (active) {
+                    "Receiving GDL90 and sending to localhost:4000"
+                } else {
+                    "Waiting for GDL90 messages to send to localhost:4000"
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = textColor,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "${status.gdl90FramesBridged} frames, ${status.gdl90BytesBridged} bytes forwarded",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+        ActivityPropeller(
+            pulseTick = status.gdl90ActivityTick,
+            color = textColor,
+            active = active,
+            reverse = true,
+        )
     }
 }
 

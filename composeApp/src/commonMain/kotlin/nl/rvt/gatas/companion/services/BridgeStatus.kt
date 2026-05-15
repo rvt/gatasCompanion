@@ -13,6 +13,10 @@ data class BridgeStatus(
     val availableStreams: String? = null,
     val serverActivityTick: Long = 0,
     val gatasActivityTick: Long = 0,
+    val gdl90BridgeEnabled: Boolean = false,
+    val gdl90FramesBridged: Long = 0,
+    val gdl90BytesBridged: Long = 0,
+    val gdl90ActivityTick: Long = 0,
     val lastEvent: String = "Idle",
     val lastError: String? = null,
 ) {

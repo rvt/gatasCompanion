@@ -12,7 +12,13 @@ struct ComposeView: UIViewControllerRepresentable {
 
 struct ContentView: View {
     var body: some View {
-        ComposeView()
+        ZStack {
+            ComposeView()
                 .ignoresSafeArea(.keyboard) // Compose has own keyboard handler
+
+            if #available(iOS 16.1, *) {
+                LiveActivityBootstrapView()
+            }
+        }
     }
 }

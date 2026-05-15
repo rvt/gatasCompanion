@@ -1,5 +1,5 @@
 [versions]
-agp = "8.9.3"
+agp = "9.2.1"
 android-compileSdk = "36"
 android-minSdk = "24"
 android-targetSdk = "35"
@@ -13,7 +13,7 @@ androidx-material = "1.12.0"
 androidx-test-junit = "1.2.1"
 compose-multiplatform = "1.8.2"
 junit = "4.13.2"
-kotlin-version = "2.2.0"
+kotlin-version = "2.2.10"
 kable = "0.38.0"
 androidx-annotation = "1.9.1"
 mokoPermissions = "0.19.1"
@@ -27,6 +27,7 @@ napierVersion = "2.7.1"
 kermitVersion = "2.0.6"
 koin-version = "3.5.6"
 gatas-library = "1.0.0"
+okio = "3.10.2"
 
 [libraries]
 #gatas-library = { module = "nl.rvantwisk.gatas:gatas-library", version.ref = "gatas-library" }
@@ -71,6 +72,8 @@ ktor-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = 
 koin-ktor = { module = "io.insert-koin:koin-ktor", version.ref = "koin-version" }
 koin-logger-slf4j = { module = "io.insert-koin:koin-logger-slf4j", version.ref = "koin-version" }
 koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin-version" }
+koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin-version" }
+okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 
 composeIcons-cssGg = { module = "br.com.devsrsouza.compose.icons:css-gg", version.ref = "composeIcons" }
 composeIcons-weatherIcons = { module = "br.com.devsrsouza.compose.icons:erikflowers-weather-icons", version.ref = "composeIcons" }

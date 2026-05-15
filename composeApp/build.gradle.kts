@@ -70,6 +70,8 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.composeIcons.lineAwesome)
             implementation(libs.kermit)
+            implementation(libs.koin.core)
+            implementation(libs.okio)
         }
 
         iosMain.dependencies {

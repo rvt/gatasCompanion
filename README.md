@@ -9,8 +9,7 @@ your mobile phone keeps having internet while at teh same time provides GATAS wi
 
 ## First-time setup
 
-1. Install the toolchain described in the [Compose Multiplatform setup guide](https://kotlinlang.org/docs/multiplatform/quickstart.html).
-2. Make sure you have an Apple ID that is enrolled in the Apple Developer Program, or a personal team set up in Xcode for device testing.
+1Make sure you have an Apple ID that is enrolled in the Apple Developer Program, or a personal team set up in Xcode for device testing.
 
 ### Find your Team ID
 
@@ -42,22 +41,31 @@ cp iosApp/Configuration/Config.local.xcconfig.example iosApp/Configuration/Confi
 
 ## Building and running
 
-### Run in Android Studio or Xcode
 
-Choose a run configuration for the target you want and run it from Android Studio or Xcode.
-
-### Deploy to a connected iPhone
-
-Use the helper script from the repo root:
+Open a terminal and run 
 
 ```bash
-./deployIos
+./gradlew build
 ```
+
+### Deploy to a connected iPhone using X-Code
+
+Open the application and deploy it to your local iPhone using the usual methods
+
+
+### Deploy to a connected iPhone using CLI
 
 `ios-deploy` is required for this deployment flow because the script installs the built app onto a connected device. Install it first:
 
 ```bash
 brew install ios-deploy
+```
+
+Use the helper script from the repo root:
+
+
+```bash
+./deployIos
 ```
 
 If you only want to build and skip installation, use:

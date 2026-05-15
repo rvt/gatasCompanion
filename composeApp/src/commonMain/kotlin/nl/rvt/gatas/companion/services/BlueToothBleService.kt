@@ -32,9 +32,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import nl.rvantwisk.gatas.lib.extensions.MessageType
+import nl.rvantwisk.gatas.lib.extensions.deserializeGDL90V1
+import nl.rvt.gatas.companion.Gdl90BridgeSettings
 import nl.rvt.gatas.companion.bluetooth.GATAS_PRIMARY_DEVICE
 import nl.rvt.gatas.companion.bluetooth.GATAS_COBS_CHARACTERISTIC
 import nl.rvt.gatas.companion.bluetooth.GATAS_RXTX_CHARACTERISTIC
+import nl.rvt.gatas.companion.liveactivity.GatasLiveActivityBridge
 import nl.rvt.gatas.companion.stuff.toHex
 import nl.rvt.gatas.requestMtuIfSupported
 import kotlin.uuid.ExperimentalUuidApi
@@ -44,6 +48,7 @@ private val log = Logger.withTag(BlueToothBleService::class.simpleName ?: "BlueT
 class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
     private val identifier: String,
     private val udpRelayService: GatasUdpRelayService = GatasUdpRelayService(),
+    private val gdl90UdpBridgeService: Gdl90UdpBridgeService = Gdl90UdpBridgeService(),
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -66,6 +71,8 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
             return
         }
 
+        GatasLiveActivityBridge.setBridgeRunning(true)
+
         _status.update {
             it.copy(
                 running = true,
@@ -74,6 +81,7 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
                 udpHealthy = true,
                 activeStream = null,
                 availableStreams = null,
+                gdl90BridgeEnabled = Gdl90BridgeSettings.isEnabled(),
                 lastError = null,
                 lastEvent = "Searching for GATAS BLE device..."
             )
@@ -90,6 +98,7 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
                                 connecting = false,
                                 bleConnected = true,
                                 activeStream = null,
+                                gdl90BridgeEnabled = Gdl90BridgeSettings.isEnabled(),
                                 lastEvent = "Bluetooth connected, waiting for frames..."
                             )
                         }
@@ -136,6 +145,7 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
             connectedPeripheral?.close()
             connectedPeripheral = null
             udpRelayService.stop()
+            gdl90UdpBridgeService.stop()
             _status.update {
                 it.copy(
                     running = false,
@@ -148,6 +158,7 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
                     lastError = null
                 )
             }
+            GatasLiveActivityBridge.reset()
         }
     }
 
@@ -243,6 +254,7 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
                                 if (frameBuffer.isNotEmpty()) {
                                     val payload = frameBuffer.toByteArray()
                                     frameBuffer.clear()
+                                    GatasLiveActivityBridge.recordPacket()
                                     _status.update {
                                         it.copy(
                                             framesReceived = it.framesReceived + 1,
@@ -272,6 +284,8 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
         payload: ByteArray,
     ) {
         log.d { "📩 $label BLE -> UDP ${payload.toHex()}" }
+        maybeBridgeGdl90Frame(label, payload)
+
         _status.update {
             it.copy(
                 serverActivityTick = it.serverActivityTick + 1,
@@ -316,7 +330,51 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
                 lastEvent = "UDP response received (${response.size} bytes)"
             )
         }
+        GatasLiveActivityBridge.recordPacket()
         sendResponse(peripheral, characteristic, label, response)
+    }
+
+    private suspend fun maybeBridgeGdl90Frame(label: String, payload: ByteArray) {
+        if (label != "COBS" || !Gdl90BridgeSettings.isEnabled()) {
+            return
+        }
+
+        val type = runCatching {
+            nl.rvantwisk.gatas.lib.extensions.CobsByteArray(payload).peekAhead()
+        }.getOrNull()
+
+        if (type != MessageType.GDL90_V1.value) {
+            return
+        }
+
+        val gdl90 = runCatching {
+            deserializeGDL90V1(payload)
+        }.getOrElse { e ->
+            log.w(e) { "Failed to decode GDL90 COBS frame" }
+            return
+        }
+
+        try {
+            gdl90UdpBridgeService.send(gdl90)
+            _status.update {
+                it.copy(
+                    serverActivityTick = it.serverActivityTick + 1,
+                    gdl90FramesBridged = it.gdl90FramesBridged + 1,
+                    gdl90BytesBridged = it.gdl90BytesBridged + gdl90.size,
+                    gdl90ActivityTick = it.gdl90ActivityTick + 1,
+                    gdl90BridgeEnabled = true,
+                    lastEvent = "GDL90 frame sent to localhost:4000 (${gdl90.size} bytes)"
+                )
+            }
+        } catch (e: Exception) {
+            log.e(e) { "GDL90 UDP bridge failed" }
+            _status.update {
+                it.copy(
+                    lastError = e.message ?: "GDL90 UDP bridge failed",
+                    lastEvent = "GDL90 UDP bridge failed"
+                )
+            }
+        }
     }
 
     private suspend fun sendResponse(
