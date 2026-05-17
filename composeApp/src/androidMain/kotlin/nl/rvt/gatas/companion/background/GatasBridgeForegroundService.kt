@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import nl.rvt.gatas.companion.GaTasDevice
 import nl.rvt.gatas.MainActivity
 import nl.rvt.gatas.companion.services.BlueToothBleService
 import nl.rvt.gatas.companion.services.BridgeStatus
@@ -32,7 +33,7 @@ class GatasBridgeForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var statusJob: Job? = null
     private var bridgeService: BlueToothBleService? = null
-    private var currentIdentifier: String? = null
+    private var currentDevice: GaTasDevice? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -52,11 +53,12 @@ class GatasBridgeForegroundService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val identifier = intent.getStringExtra(EXTRA_IDENTIFIER)
-                if (identifier.isNullOrBlank()) {
-                    Logger.w { "Foreground bridge start requested without an identifier" }
+                val name = intent.getStringExtra(EXTRA_NAME)
+                if (identifier.isNullOrBlank() || name.isNullOrBlank()) {
+                    Logger.w { "Foreground bridge start requested without a complete device target" }
                     stopSelf()
                 } else {
-                    startBridge(identifier)
+                    startBridge(GaTasDevice(name = name, identifier = identifier))
                 }
             }
 
@@ -73,16 +75,16 @@ class GatasBridgeForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun startBridge(identifier: String) {
-        if (currentIdentifier == identifier && bridgeService != null) {
+    private fun startBridge(device: GaTasDevice) {
+        if (currentDevice == device && bridgeService != null) {
             return
         }
 
         stopBridge(updateNotification = false)
-        currentIdentifier = identifier
+        currentDevice = device
 
         val relayService = GatasUdpRelayService()
-        val service = BlueToothBleService(identifier, relayService)
+        val service = BlueToothBleService(device, relayService)
         bridgeService = service
 
         statusJob = serviceScope.launch {
@@ -109,7 +111,7 @@ class GatasBridgeForegroundService : Service() {
 
         bridgeService?.stop()
         bridgeService = null
-        currentIdentifier = null
+        currentDevice = null
         _status.value = BridgeStatus()
         if (updateNotification) {
             updateNotification(
@@ -187,6 +189,7 @@ class GatasBridgeForegroundService : Service() {
         private const val ACTION_START = "nl.rvt.gatas.companion.background.action.START"
         private const val ACTION_STOP = "nl.rvt.gatas.companion.background.action.STOP"
         private const val EXTRA_IDENTIFIER = "extra_identifier"
+        private const val EXTRA_NAME = "extra_name"
         private const val CHANNEL_ID = "gatas_bridge"
         private const val CHANNEL_NAME = "GATAS Bridge"
         private const val NOTIFICATION_ID = 4242
@@ -194,10 +197,11 @@ class GatasBridgeForegroundService : Service() {
         private val _status = MutableStateFlow(BridgeStatus())
         val status: StateFlow<BridgeStatus> = _status.asStateFlow()
 
-        fun start(context: Context, identifier: String) {
+        fun start(context: Context, device: GaTasDevice) {
             val intent = Intent(context, GatasBridgeForegroundService::class.java).apply {
                 action = ACTION_START
-                putExtra(EXTRA_IDENTIFIER, identifier)
+                putExtra(EXTRA_IDENTIFIER, device.identifier)
+                putExtra(EXTRA_NAME, device.name)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)

@@ -45,7 +45,7 @@ import kotlin.uuid.ExperimentalUuidApi
 fun LandingScreen(
     devices: Set<GaTasDevice>,
     deleteItem: (id: GaTasDevice) -> Unit,
-    onItemClicked: (id: String) -> Unit = {},
+    onItemClicked: (device: GaTasDevice) -> Unit = {},
     addBleDevice: (ble: GaTasDevice) -> Unit,
     onScanClicked: () -> Unit = {},
     permissionsController: PermissionsController
@@ -131,7 +131,7 @@ fun rememberBleScanPermissionHandler(
 @Composable
 private fun ListContent(
     oeitems: List<GaTasDevice>,
-    onItemClicked: (id: String) -> Unit,
+    onItemClicked: (device: GaTasDevice) -> Unit,
     deleteItem: (item: GaTasDevice) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -144,7 +144,7 @@ private fun ListContent(
         items(oeitems) { item ->
             DeviceButton(
                 item = item,
-                onClicked = { onItemClicked(item.identifier) },
+                onClicked = { onItemClicked(item) },
                 onDeleteClicked = { deleteItem(item) }
             )
         }

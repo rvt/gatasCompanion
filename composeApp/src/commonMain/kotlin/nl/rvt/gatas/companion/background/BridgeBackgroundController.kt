@@ -10,29 +10,30 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import nl.rvt.gatas.companion.GaTasDevice
 import nl.rvt.gatas.companion.services.BlueToothBleService
 import nl.rvt.gatas.companion.services.BridgeStatus
 
 class BridgeBackgroundController(
-    private val createBridgeService: (String) -> BlueToothBleService = ::BlueToothBleService,
+    private val createBridgeService: (GaTasDevice) -> BlueToothBleService = ::BlueToothBleService,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _status = MutableStateFlow(BridgeStatus())
     val status: StateFlow<BridgeStatus> = _status.asStateFlow()
 
-    private var activeIdentifier: String? = null
+    private var activeDevice: GaTasDevice? = null
     private var activeService: BlueToothBleService? = null
     private var statusJob: Job? = null
 
-    fun start(identifier: String) {
-        if (activeIdentifier == identifier && activeService != null) {
+    fun start(device: GaTasDevice) {
+        if (activeDevice == device && activeService != null) {
             return
         }
 
         stop()
 
-        activeIdentifier = identifier
-        val bridgeService = createBridgeService(identifier)
+        activeDevice = device
+        val bridgeService = createBridgeService(device)
         activeService = bridgeService
 
         statusJob = scope.launch {
@@ -50,7 +51,7 @@ class BridgeBackgroundController(
 
         activeService?.stop()
         activeService = null
-        activeIdentifier = null
+        activeDevice = null
         _status.value = BridgeStatus()
     }
 }

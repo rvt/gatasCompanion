@@ -6,11 +6,11 @@ import io.ktor.network.sockets.ConnectedDatagramSocket
 import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
-import io.ktor.utils.io.core.ByteReadPacket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.io.Buffer
 
 private val gdl90UdpLog = Logger.withTag("Gdl90UdpBridge")
 
@@ -29,7 +29,7 @@ class Gdl90UdpBridgeService(
         try {
             activeSocket.send(
                 Datagram(
-                    packet = ByteReadPacket(payload),
+                    packet = Buffer().also { it.write(payload) },
                     address = InetSocketAddress(host, port),
                 )
             )

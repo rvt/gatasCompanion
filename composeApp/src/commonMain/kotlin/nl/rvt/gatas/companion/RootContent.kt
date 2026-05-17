@@ -93,7 +93,7 @@ fun RootContent(
                         onItemClicked = model::connected,
                         onScanClicked = model::blueTooth,
                         addBleDevice = {},
-                        permissionsController = permissionsController!!
+                        permissionsController = permissionsController
                     )
 
                     Screen.BlueTooth -> {

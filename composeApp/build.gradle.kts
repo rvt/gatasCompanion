@@ -20,12 +20,12 @@ kotlin {
     
     listOf(
         iosArm64(),           // Real Device
-        iosX64(),             // Simulator
         iosSimulatorArm64()   // ✅ if targeting M1/M2 simulator
     ).forEach { iosTarget ->
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
+            binaryOption("bundleId", "nl.rvt.gatas.composeapp")
         }
     }
     

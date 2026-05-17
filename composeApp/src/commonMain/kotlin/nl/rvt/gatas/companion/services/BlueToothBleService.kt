@@ -19,21 +19,20 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import nl.rvantwisk.gatas.lib.extensions.MessageType
 import nl.rvantwisk.gatas.lib.extensions.deserializeGDL90V1
+import nl.rvt.gatas.companion.GaTasDevice
 import nl.rvt.gatas.companion.Gdl90BridgeSettings
 import nl.rvt.gatas.companion.bluetooth.GATAS_PRIMARY_DEVICE
 import nl.rvt.gatas.companion.bluetooth.GATAS_COBS_CHARACTERISTIC
@@ -45,8 +44,9 @@ import kotlin.uuid.ExperimentalUuidApi
 
 private val log = Logger.withTag(BlueToothBleService::class.simpleName ?: "BlueToothBleService")
 
-class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
-    private val identifier: String,
+@OptIn(ExperimentalUuidApi::class)
+class BlueToothBleService constructor(
+    private val targetDevice: GaTasDevice,
     private val udpRelayService: GatasUdpRelayService = GatasUdpRelayService(),
     private val gdl90UdpBridgeService: Gdl90UdpBridgeService = Gdl90UdpBridgeService(),
 ) {
@@ -55,16 +55,23 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
     private val _status = MutableStateFlow(BridgeStatus())
     val status: StateFlow<BridgeStatus> = _status.asStateFlow()
 
-    @OptIn(ExperimentalUuidApi::class)
     private val nmeaCharacteristic: Characteristic =
         characteristicOf(GATAS_PRIMARY_DEVICE, GATAS_RXTX_CHARACTERISTIC)
 
-    @OptIn(ExperimentalUuidApi::class)
     private val cobsCharacteristic: Characteristic =
         characteristicOf(GATAS_PRIMARY_DEVICE, GATAS_COBS_CHARACTERISTIC)
 
     private var connectedPeripheral: Peripheral? = null
     private var reconnectJob: Job? = null
+
+    companion object {
+        private const val RECONNECT_SCAN_TIMEOUT_MILLIS = 15_000L
+        private const val SERVICE_DISCOVERY_TIMEOUT_MILLIS = 5_000L
+        private val RELAYED_COBS_MESSAGE_TYPES = setOf(
+            MessageType.AIRCRAFT_POSITION_REQUEST_V1.value,
+            MessageType.AIRCRAFT_CONFIGURATIONS_V2.value,
+        )
+    }
 
     fun start() {
         if (connectedPeripheral != null) {
@@ -163,13 +170,16 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
     }
 
     private suspend fun connectAndObserve(): Peripheral? {
-        val device = getDevice(identifier)
-            .onEach { /* update UI */ }
-            .take(10_000)
-            .firstOrNull()
+        val device = findReconnectTarget()
 
         if (device == null) {
-            log.w { "❌ Device not found: $identifier" }
+            log.w { "❌ Device not found: ${targetDevice.identifier} (${targetDevice.name})" }
+            _status.update {
+                it.copy(
+                    lastError = "Bluetooth device not found",
+                    lastEvent = "Saved Bluetooth ID not found, retrying..."
+                )
+            }
             return null
         }
 
@@ -286,6 +296,20 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
         log.d { "📩 $label BLE -> UDP ${payload.toHex()}" }
         maybeBridgeGdl90Frame(label, payload)
 
+        val relayDecision = relayDecision(label, payload)
+        if (!relayDecision.shouldRelay) {
+            log.i {
+                "Skipping $label relay to gatasServer for message type ${relayDecision.messageType}"
+            }
+            _status.update {
+                it.copy(
+                    activeStream = label,
+                    lastEvent = "Skipped $label relay for unsupported message type ${relayDecision.messageType}"
+                )
+            }
+            return
+        }
+
         _status.update {
             it.copy(
                 serverActivityTick = it.serverActivityTick + 1,
@@ -332,6 +356,24 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
         }
         GatasLiveActivityBridge.recordPacket()
         sendResponse(peripheral, characteristic, label, response)
+    }
+
+    private fun relayDecision(label: String, payload: ByteArray): RelayDecision {
+        if (label != "COBS") {
+            return RelayDecision(shouldRelay = true, messageType = null)
+        }
+
+        val type = runCatching {
+            nl.rvantwisk.gatas.lib.extensions.CobsByteArray(payload).peekAhead()
+        }.getOrElse { error ->
+            log.w(error) { "Failed to decode COBS message type; skipping relay to gatasServer" }
+            return RelayDecision(shouldRelay = false, messageType = null)
+        }
+
+        return RelayDecision(
+            shouldRelay = type in RELAYED_COBS_MESSAGE_TYPES,
+            messageType = type,
+        )
     }
 
     private suspend fun maybeBridgeGdl90Frame(label: String, payload: ByteArray) {
@@ -417,13 +459,14 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
         return result
     }
 
-    @OptIn(ExperimentalUuidApi::class)
-    private fun observableCharacteristic(
+    private suspend fun observableCharacteristic(
         peripheral: Peripheral,
         expected: Characteristic,
         label: String,
     ): Characteristic? {
-        val services = peripheral.services.value
+        val services = withTimeoutOrNull(SERVICE_DISCOVERY_TIMEOUT_MILLIS) {
+            peripheral.services.first { it != null }
+        }
         if (services == null) {
             log.w { "No GATT services available yet for $label" }
             return null
@@ -461,8 +504,7 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
         return expected
     }
 
-    @OptIn(ExperimentalUuidApi::class)
-    private fun getDevice(identifier: String): Flow<Advertisement> {
+    private suspend fun findReconnectTarget(): Advertisement? {
         val scanner = Scanner {
             filters {
                 match {
@@ -474,8 +516,16 @@ class BlueToothBleService @OptIn(ExperimentalUuidApi::class) constructor(
             }
         }
 
-        return scanner.advertisements
-            .filter { it.identifier.toString() == identifier }
+        return withTimeoutOrNull(RECONNECT_SCAN_TIMEOUT_MILLIS) {
+            scanner.advertisements
+                .filter { it.identifier.toString() == targetDevice.identifier }
+                .first()
+        }
     }
+
+    private data class RelayDecision(
+        val shouldRelay: Boolean,
+        val messageType: Int?,
+    )
 
 }

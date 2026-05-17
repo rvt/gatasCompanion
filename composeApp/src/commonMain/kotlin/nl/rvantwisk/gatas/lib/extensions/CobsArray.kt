@@ -109,7 +109,7 @@ class CobsByteArray {
     val value = ((buffer[offset].toInt() and 0xFF) shl 8) or
       (buffer[offset + 1].toInt() and 0xFF)
     offset += 2
-    return value.toInt()
+    return value
   }
 
   fun getUInt2(): UInt {

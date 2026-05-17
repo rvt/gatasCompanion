@@ -138,7 +138,7 @@ private fun DeviceButton(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = item.identifier.toString(),
+                    text = item.identifier,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

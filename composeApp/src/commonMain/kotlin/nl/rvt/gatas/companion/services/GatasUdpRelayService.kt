@@ -6,13 +6,13 @@ import io.ktor.network.sockets.ConnectedDatagramSocket
 import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
-import io.ktor.utils.io.core.ByteReadPacket
-import io.ktor.utils.io.core.readBytes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.io.Buffer
+import kotlinx.io.readByteArray
 
 private val udpLog = Logger.withTag("GatasUdpRelay")
 
@@ -32,7 +32,7 @@ class GatasUdpRelayService(
         try {
             activeSocket.send(
                 Datagram(
-                    packet = ByteReadPacket(payload),
+                    packet = Buffer().also { it.write(payload) },
                     address = InetSocketAddress(host, port),
                 )
             )
@@ -44,7 +44,7 @@ class GatasUdpRelayService(
                 return null
             }
 
-            response.packet.readBytes()
+            response.packet.readByteArray()
         } catch (e: Exception) {
             socket?.close()
             socket = null

@@ -10,7 +10,7 @@ class RootStore {
         private set
 
     fun landing() = setState { copy(screen = Screen.Landing, connectTo = null) }
-    fun connected(id: String) = setState { copy(screen = Screen.Connected, connectTo = id) }
+    fun connected(device: GaTasDevice) = setState { copy(screen = Screen.Connected, connectTo = device) }
     fun blueTooth() = setState { copy(screen = Screen.BlueTooth, connectTo = null) }
     fun settings() = setState { copy(screen = Screen.Settings, connectTo = null) }
     fun setGdl90BridgeEnabled(enabled: Boolean) {
@@ -51,7 +51,7 @@ class RootStore {
         val screen: Screen,
         val airplanesLiveApiKey: String,
         val gdl90BridgeEnabled: Boolean,
-        val connectTo: String? = null
+        val connectTo: GaTasDevice? = null
     )
 
     enum class Screen {
