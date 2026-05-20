@@ -65,7 +65,8 @@ class BlueToothBleService constructor(
     private var reconnectJob: Job? = null
 
     companion object {
-        private const val RECONNECT_SCAN_TIMEOUT_MILLIS = 15_000L
+        private const val RECONNECT_SCAN_TIMEOUT_MILLIS = 5_000L
+        private const val RECONNECT_RETRY_DELAY_MILLIS = 1_000L
         private const val SERVICE_DISCOVERY_TIMEOUT_MILLIS = 5_000L
         private val RELAYED_COBS_MESSAGE_TYPES = setOf(
             MessageType.AIRCRAFT_POSITION_REQUEST_V1.value,
@@ -111,7 +112,7 @@ class BlueToothBleService constructor(
                         }
                         connectedPeripheral?.state?.filterIsInstance<State.Disconnected>()
                             ?.first()
-                        log.d("🔌 Disconnected. Reconnecting in 3s...")
+                        log.d("🔌 Disconnected. Reconnecting in ${RECONNECT_RETRY_DELAY_MILLIS}ms...")
                         _status.update {
                             it.copy(
                                 bleConnected = false,
@@ -126,7 +127,9 @@ class BlueToothBleService constructor(
                     connectedPeripheral?.close()
                     connectedPeripheral = null
                 } catch (e: Exception) {
-                    log.e { "⚠️ Connection attempt failed: ${e.message}. Retrying in 3s..." }
+                    log.e {
+                        "⚠️ Connection attempt failed: ${e.message}. Retrying in ${RECONNECT_RETRY_DELAY_MILLIS}ms..."
+                    }
                     _status.update {
                         it.copy(
                             connecting = true,
@@ -138,7 +141,7 @@ class BlueToothBleService constructor(
                         )
                     }
                 }
-                delay(3000)
+                delay(RECONNECT_RETRY_DELAY_MILLIS)
             }
         }
     }
