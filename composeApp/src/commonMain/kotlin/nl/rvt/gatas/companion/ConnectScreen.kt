@@ -11,7 +11,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,19 +47,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -91,6 +87,14 @@ fun ConnectScreen(
     }
 
     PlatformKeepScreenOnEffect()
+
+    LaunchedEffect(ownshipConfiguration?.icaoAddressList) {
+        aircraftPickerEntries = if (ownshipConfiguration == null) {
+            emptyList()
+        } else {
+            AircraftLookupService.loadCachedAircraftPickerEntries(ownshipConfiguration.icaoAddressList)
+        }
+    }
 
     LaunchedEffect(showAircraftDialog, ownshipConfiguration?.icaoAddressList) {
         if (!showAircraftDialog || ownshipConfiguration == null) {
@@ -250,7 +254,7 @@ private fun ConnectionInfoCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "callsign",
+                    text = "Call-Sign",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -369,7 +373,6 @@ private fun AircraftPickerCard(
     pending: Boolean,
     onClick: () -> Unit,
 ) {
-    val imageBitmap = rememberAircraftThumbnail(entry)
     val backgroundTint = if (selected) Color(0xFFE9FADF) else MaterialTheme.colorScheme.surface
     val borderColor = when {
         pending -> MaterialTheme.colorScheme.primary
@@ -395,21 +398,10 @@ private fun AircraftPickerCard(
                 .fillMaxWidth()
                 .height(168.dp)
         ) {
-            if (imageBitmap != null) {
-                Image(
-                    bitmap = imageBitmap,
-                    contentDescription = entry.registration,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer(alpha = 0.22f)
-                )
-            }
-
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(backgroundTint.copy(alpha = if (imageBitmap != null) 0.78f else 1f))
+                    .background(backgroundTint)
                     .padding(16.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
@@ -456,18 +448,6 @@ private fun AircraftPickerCard(
             }
         }
     }
-}
-
-@Composable
-private fun rememberAircraftThumbnail(entry: AircraftPickerEntry): ImageBitmap? {
-    val imageBitmap by produceState<ImageBitmap?>(initialValue = null, key1 = entry.icaoHexCode, key2 = entry.imageUrl) {
-        value = if (entry.imageUrl.isNullOrBlank()) {
-            null
-        } else {
-            AircraftLookupService.loadThumbnail(entry.icaoHexCode, entry.imageUrl)
-        }
-    }
-    return imageBitmap
 }
 
 @Composable

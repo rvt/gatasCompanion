@@ -12,7 +12,7 @@ import com.juul.kable.WriteType
 import com.juul.kable.indicate
 import com.juul.kable.notify
 import com.juul.kable.characteristicOf
-import com.juul.kable.logs.Logging.Level.Events
+import com.juul.kable.logs.Logging.Level.Warnings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -45,6 +44,7 @@ import nl.rvt.gatas.companion.bluetooth.GATAS_COBS_CHARACTERISTIC
 import nl.rvt.gatas.companion.bluetooth.GATAS_RXTX_CHARACTERISTIC
 import nl.rvt.gatas.companion.liveactivity.GatasLiveActivityBridge
 import nl.rvt.gatas.companion.stuff.toHex
+import nl.rvt.gatas.restorePeripheralIfPossible
 import nl.rvt.gatas.requestMtuIfSupported
 import kotlin.time.TimeSource
 import kotlin.uuid.ExperimentalUuidApi
@@ -81,8 +81,9 @@ class BlueToothBleService constructor(
         private const val RECONNECT_SCAN_TIMEOUT_MILLIS = 5_000L
         private const val RECONNECT_RETRY_DELAY_MILLIS = 1_000L
         private const val SERVICE_DISCOVERY_TIMEOUT_MILLIS = 5_000L
-        private const val AIRCRAFT_CHANGE_TIMEOUT_MILLIS = 15_000L
-        private const val AIRCRAFT_CHANGE_RETRY_INTERVAL_MILLIS = 5_000L
+        private const val AIRCRAFT_CHANGE_TOTAL_TIMEOUT_MILLIS = 15_000L
+        private const val AIRCRAFT_CHANGE_INITIAL_TIMEOUT_MILLIS = 6_000L
+        private const val AIRCRAFT_CHANGE_RETRY_INTERVAL_MILLIS = 500L
         private val RELAYED_COBS_MESSAGE_TYPES = setOf(
             MessageType.AIRCRAFT_POSITION_REQUEST_V1.value,
             MessageType.AIRCRAFT_CONFIGURATIONS_V2.value,
@@ -193,47 +194,56 @@ class BlueToothBleService constructor(
         scope.launch {
             aircraftChangeJob?.cancelAndJoin()
 
-            val peripheral = connectedPeripheral
-            if (peripheral == null) {
-                _status.update {
-                    it.copy(
-                        aircraftChangeTargetIcaoAddress = null,
-                        lastError = "Bluetooth not connected",
-                        lastEvent = "Cannot change aircraft while disconnected",
-                    )
-                }
-                return@launch
-            }
-
             aircraftChangeJob = launch {
+                val initialPeripheral = connectedPeripheral
+                if (initialPeripheral == null) {
+                    _status.update {
+                        it.copy(
+                            aircraftChangeTargetIcaoAddress = null,
+                            lastError = "Bluetooth not connected",
+                            lastEvent = "Cannot change aircraft while disconnected",
+                        )
+                    }
+                    return@launch
+                }
+
+                val changeSucceeded = performAircraftChangeAttempt(
+                    peripheral = initialPeripheral,
+                    icaoAddress = icaoAddress,
+                    attemptLabel = "Changing aircraft to ${icaoAddress.toIcaoHex()}",
+                    timeoutMillis = AIRCRAFT_CHANGE_INITIAL_TIMEOUT_MILLIS,
+                )
+                if (changeSucceeded) {
+                    return@launch
+                }
+
                 _status.update {
                     it.copy(
                         aircraftChangeTargetIcaoAddress = icaoAddress,
                         lastError = null,
-                        lastEvent = "Changing aircraft to ${icaoAddress.toIcaoHex()}",
+                        lastEvent = "Aircraft change timed out, reconnecting Bluetooth to retry",
                     )
                 }
 
-                val startedAt = TimeSource.Monotonic.markNow()
-                while (startedAt.elapsedNow().inWholeMilliseconds < AIRCRAFT_CHANGE_TIMEOUT_MILLIS) {
-                    if (_status.value.ownshipConfiguration?.icaoAddress == icaoAddress) {
-                        finalizeAircraftChange(
-                            icaoAddress = icaoAddress,
-                            lastEvent = "Aircraft changed to ${icaoAddress.toIcaoHex()}",
+                val retryPeripheral = reconnectBluetoothForAircraftChange()
+                if (retryPeripheral == null) {
+                    _status.update {
+                        it.copy(
+                            aircraftChangeTargetIcaoAddress = null,
+                            lastError = "Timed out changing aircraft after reconnect",
+                            lastEvent = "Aircraft change retry failed",
                         )
-                        return@launch
                     }
-
-                    sendAircraftChangeCommand(peripheral, icaoAddress)
-                    delay(AIRCRAFT_CHANGE_RETRY_INTERVAL_MILLIS)
+                    return@launch
                 }
 
-                if (_status.value.ownshipConfiguration?.icaoAddress == icaoAddress) {
-                    finalizeAircraftChange(
+                if (!performAircraftChangeAttempt(
+                        peripheral = retryPeripheral,
                         icaoAddress = icaoAddress,
-                        lastEvent = "Aircraft changed to ${icaoAddress.toIcaoHex()}",
+                        attemptLabel = "Retrying aircraft change to ${icaoAddress.toIcaoHex()}",
+                        timeoutMillis = AIRCRAFT_CHANGE_TOTAL_TIMEOUT_MILLIS - AIRCRAFT_CHANGE_INITIAL_TIMEOUT_MILLIS,
                     )
-                } else {
+                ) {
                     _status.update {
                         it.copy(
                             aircraftChangeTargetIcaoAddress = null,
@@ -246,33 +256,93 @@ class BlueToothBleService constructor(
         }
     }
 
-    private suspend fun connectAndObserve(): Peripheral? {
-        val device = findReconnectTarget()
-
-        if (device == null) {
-            log.w { "❌ Device not found: ${targetDevice.identifier} (${targetDevice.name})" }
-            _status.update {
-                it.copy(
-                    lastError = "Bluetooth device not found",
-                    lastEvent = "Saved Bluetooth ID not found, retrying..."
-                )
-            }
-            return null
+    private suspend fun performAircraftChangeAttempt(
+        peripheral: Peripheral,
+        icaoAddress: Long,
+        attemptLabel: String,
+        timeoutMillis: Long,
+    ): Boolean {
+        _status.update {
+            it.copy(
+                aircraftChangeTargetIcaoAddress = icaoAddress,
+                lastError = null,
+                lastEvent = attemptLabel,
+            )
         }
 
-        log.i { "📡 Connecting to ${device.name} (${device.identifier})..." }
-        val newPeripheral = Peripheral(device) {}
-        val connectionScope = newPeripheral.connect()
-        requestMtuIfSupported(newPeripheral)
+        val startedAt = TimeSource.Monotonic.markNow()
+        while (startedAt.elapsedNow().inWholeMilliseconds < timeoutMillis) {
+            if (_status.value.ownshipConfiguration?.icaoAddress == icaoAddress) {
+                finalizeAircraftChange(
+                    icaoAddress = icaoAddress,
+                    lastEvent = "Aircraft changed to ${icaoAddress.toIcaoHex()}",
+                )
+                return true
+            }
 
-        newPeripheral.state
-            .filterIsInstance<State.Connected>()
-            .first() // Await connection
+            sendAircraftChangeCommand(peripheral, icaoAddress)
+            val remainingMillis = timeoutMillis - startedAt.elapsedNow().inWholeMilliseconds
+            if (remainingMillis <= 0L) {
+                break
+            }
+            delay(minOf(AIRCRAFT_CHANGE_RETRY_INTERVAL_MILLIS, remainingMillis))
+        }
 
-        log.i { "✅ Connected to ${device.name}" }
+        if (_status.value.ownshipConfiguration?.icaoAddress == icaoAddress) {
+            finalizeAircraftChange(
+                icaoAddress = icaoAddress,
+                lastEvent = "Aircraft changed to ${icaoAddress.toIcaoHex()}",
+            )
+            return true
+        }
 
-        val nmeaObservable = observableCharacteristic(newPeripheral, nmeaCharacteristic, "NMEA")
-        val cobsObservable = observableCharacteristic(newPeripheral, cobsCharacteristic, "COBS")
+        return false
+    }
+
+    private suspend fun reconnectBluetoothForAircraftChange(): Peripheral? {
+        val peripheral = connectedPeripheral ?: return null
+
+        runCatching { peripheral.disconnect() }
+        runCatching { peripheral.close() }
+        connectedPeripheral = null
+
+        val startedAt = TimeSource.Monotonic.markNow()
+        while (startedAt.elapsedNow().inWholeMilliseconds < AIRCRAFT_CHANGE_TOTAL_TIMEOUT_MILLIS) {
+            val reconnectedPeripheral = connectedPeripheral
+            if (reconnectedPeripheral != null && _status.value.bleConnected) {
+                return reconnectedPeripheral
+            }
+            delay(250)
+        }
+
+        return null
+    }
+
+    private suspend fun connectAndObserve(): Peripheral? {
+        val peripheral = restorePeripheral() ?: run {
+            val device = findReconnectTarget() ?: run {
+                log.w { "❌ Device not found: ${targetDevice.identifier} (${targetDevice.name})" }
+                _status.update {
+                    it.copy(
+                        lastError = "Bluetooth device not found",
+                        lastEvent = "Saved Bluetooth ID not found, retrying..."
+                    )
+                }
+                return null
+            }
+
+            log.i { "📡 Connecting to ${device.name} (${device.identifier})..." }
+            Peripheral(device) {}
+        }
+
+        log.i { "📡 Connecting to ${targetDevice.name} (${peripheral.identifier})..." }
+        val connectionScope = peripheral.connect()
+        requestMtuIfSupported(peripheral)
+
+        log.i { "✅ Connected to ${targetDevice.name}" }
+
+        val nmeaObservable = observableCharacteristic(peripheral, nmeaCharacteristic, "NMEA")
+        val cobsObservable = observableCharacteristic(peripheral, cobsCharacteristic, "COBS")
         _status.update {
             it.copy(
                 activeStream = buildList {
@@ -290,16 +360,19 @@ class BlueToothBleService constructor(
             )
         }
 
-        delay(2000)
         connectionScope.launch {
             observeIncomingNotifications(
                 connectionScope = connectionScope,
-                peripheral = newPeripheral,
+                peripheral = peripheral,
                 nmeaObservable = nmeaObservable,
                 cobsObservable = cobsObservable,
             )
         }
-        return newPeripheral
+        return peripheral
+    }
+
+    private fun restorePeripheral(): Peripheral? {
+        return restorePeripheralIfPossible(targetDevice.identifier)
     }
 
     private suspend fun observeIncomingNotifications(
@@ -799,7 +872,7 @@ class BlueToothBleService constructor(
                 }
             }
             logging {
-                level = Events
+                level = Warnings
             }
         }
 

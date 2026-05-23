@@ -4,7 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import nl.rvt.gatas.appContext
-import java.io.File
 
 actual object AircraftCacheStore {
     private const val PREFERENCES_NAME = "gatas_aircraft_cache"
@@ -29,17 +28,4 @@ actual object AircraftCacheStore {
             .putString("$ENTRY_PREFIX${entry.icaoHexCode}", json.encodeToString(AircraftPickerEntry.serializer(), entry))
             .apply()
     }
-
-    actual suspend fun loadThumbnail(icaoHexCode: String): ByteArray? = withContext(Dispatchers.IO) {
-        thumbnailFile(icaoHexCode).takeIf { it.exists() }?.readBytes()
-    }
-
-    actual suspend fun saveThumbnail(icaoHexCode: String, bytes: ByteArray) = withContext(Dispatchers.IO) {
-        val file = thumbnailFile(icaoHexCode)
-        file.parentFile?.mkdirs()
-        file.writeBytes(bytes)
-    }
-
-    private fun thumbnailFile(icaoHexCode: String): File =
-        File(appContext.cacheDir, "aircraft-thumbnails/$icaoHexCode.img")
 }

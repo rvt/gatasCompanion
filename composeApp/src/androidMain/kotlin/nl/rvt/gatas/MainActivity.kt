@@ -7,7 +7,6 @@ import androidx.compose.material3.Surface
 import dev.icerock.moko.permissions.PermissionsController
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.DefaultRequest
-import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders.ContentEncoding
@@ -40,16 +39,6 @@ object KtorClient : KoinComponent {
             })
         }
 
-        HttpResponseValidator {
-            validateResponse { response ->
-                println("Response status: ${response.status}")
-                println("Response headers:")
-                response.headers.forEach { key, values ->
-                    println("$key: ${values.joinToString()}")
-                }
-            }
-        }
-
         install(DefaultRequest) {
 //            headers.append("Accept", "application/json, */*;q=0.8")
 //            headers.append("Accept-Encoding", "gzip, deflate")
@@ -73,6 +62,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appContext = applicationContext
+        initializeLogging()
 
         startKoin {
 //        androidContext(appContext)

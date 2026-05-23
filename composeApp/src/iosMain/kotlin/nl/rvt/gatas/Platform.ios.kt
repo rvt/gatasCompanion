@@ -2,6 +2,7 @@ package nl.rvt.gatas
 
 import androidx.compose.runtime.Composable
 import co.touchlab.kermit.Logger
+import com.juul.kable.ExperimentalApi
 import com.juul.kable.Peripheral
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -12,9 +13,18 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import platform.Foundation.*
 import platform.posix.memcpy
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 actual suspend fun requestMtuIfSupported(peripheral: Peripheral) {
     Logger.w { "requestMtuIfSupported NOOP" }
+}
+
+@OptIn(ExperimentalApi::class, ExperimentalUuidApi::class)
+actual fun restorePeripheralIfPossible(identifier: String): Peripheral? {
+    return runCatching {
+        Peripheral(Uuid.parse(identifier)) {}
+    }.getOrNull()
 }
 
 actual suspend fun loadKoins() {

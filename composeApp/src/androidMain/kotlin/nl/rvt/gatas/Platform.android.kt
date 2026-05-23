@@ -3,13 +3,14 @@ package nl.rvt.gatas
 import android.Manifest
 import android.app.Activity
 import android.content.Context
-import android.util.Log
 import android.view.WindowManager
 import androidx.annotation.RequiresPermission
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
+import co.touchlab.kermit.Logger
 import com.juul.kable.AndroidPeripheral
+import com.juul.kable.ExperimentalApi
 import com.juul.kable.Peripheral
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
@@ -24,25 +25,32 @@ import org.koin.core.qualifier.named
 import org.koin.dsl.module
 
 lateinit var appContext: Context
+private val bluetoothPlatformLog = Logger.withTag("BluetoothPlatform")
 
 
 actual suspend fun loadKoins() {
 
 }
 
+@OptIn(ExperimentalApi::class)
+actual fun restorePeripheralIfPossible(identifier: String): Peripheral? {
+    return runCatching {
+        Peripheral(identifier) {}
+    }.getOrNull()
+}
+
 @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
 actual suspend fun requestMtuIfSupported(peripheral: Peripheral) {
     val androidPeripheral = peripheral as? AndroidPeripheral
     if (androidPeripheral == null) {
-        Log.w("BluetoothPlatform", "❌ Peripheral is not AndroidPeripheral")
+        bluetoothPlatformLog.w { "Peripheral is not AndroidPeripheral" }
         return
     }
 
     try {
-        val mtu = androidPeripheral.requestMtu(512)
-        Log.d("BluetoothPlatform", "✅ Requested MTU, negotiated value: $mtu")
+        androidPeripheral.requestMtu(512)
     } catch (e: Exception) {
-        Log.e("BluetoothPlatform", "⚠️ Failed to request MTU: ${e.message}")
+        bluetoothPlatformLog.e(e) { "Failed to request MTU" }
     }
 }
 

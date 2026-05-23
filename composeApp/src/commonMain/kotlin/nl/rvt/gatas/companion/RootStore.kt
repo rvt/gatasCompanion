@@ -3,7 +3,10 @@ package nl.rvt.gatas.companion
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import co.touchlab.kermit.Logger
 import kotlin.uuid.ExperimentalUuidApi
+
+private val log = Logger.withTag(RootStore::class.simpleName ?: "RootStore")
 
 class RootStore {
     var state: RootState by mutableStateOf(initialState())
@@ -25,7 +28,7 @@ class RootStore {
         }
 
     fun addItem(add: GaTasDevice) {
-        println("Device added add.name: ${add.name}")
+        log.i { "Device added: ${add.name}" }
 
         setState {
             copy(devices = devices + add)

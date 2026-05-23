@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import co.touchlab.kermit.Logger
 import com.juul.kable.Identifier
 import com.juul.kable.Scanner
-import com.juul.kable.logs.Logging.Level.Events
+import com.juul.kable.logs.Logging.Level.Warnings
 import com.juul.kable.logs.SystemLogEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -49,7 +49,7 @@ class BleScannerViewModel : ViewModel() {
                 }
                 logging {
                     engine = SystemLogEngine
-                    level = Events
+                    level = Warnings
                 }
             }
         }
