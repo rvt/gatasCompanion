@@ -14,4 +14,8 @@ actual object BridgeBackgroundComponent {
     actual fun stop() {
         controller.stop()
     }
+
+    actual fun requestAircraftChange(icaoAddress: Long) {
+        controller.requestAircraftChange(icaoAddress)
+    }
 }

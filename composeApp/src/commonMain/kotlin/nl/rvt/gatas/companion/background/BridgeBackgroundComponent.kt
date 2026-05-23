@@ -9,4 +9,5 @@ expect object BridgeBackgroundComponent {
 
     fun start(device: GaTasDevice)
     fun stop()
+    fun requestAircraftChange(icaoAddress: Long)
 }

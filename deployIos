@@ -10,12 +10,14 @@ SDK="${SDK:-iphoneos}"
 INSTALL="${INSTALL:-1}"
 TEAM_ID="${DEVELOPMENT_TEAM:-}"
 DEVICE_ID="${IOS_DEPLOY_DEVICE_ID:-}"
+ARCHIVE_PATH="${ARCHIVE_PATH:-}"
+EXPORT_DIR="${EXPORT_DIR:-$DERIVED_DATA/export}"
 
 usage() {
   cat <<'EOF'
 Usage: ./deployIos [options]
 
-Builds the iOS app with xcodebuild and optionally installs it on a connected iPhone.
+Builds/signs the iOS app and optionally installs it on a connected iPhone.
 
 Options:
   --configuration Debug|Release   Build configuration (default: Debug)
@@ -23,13 +25,15 @@ Options:
   --project PATH                  Xcode project path (default: ./iosApp/iosApp.xcodeproj)
   --scheme NAME                   Xcode scheme (default: iosApp)
   --device UDID                   Install to a specific device with ios-deploy
+  --archive PATH                  Sign/export from a prebuilt .xcarchive
+  --export-dir PATH               Export output directory when using --archive
   --no-install                    Build only, do not install to a device
   --team-id TEAM_ID               Override DEVELOPMENT_TEAM for signing
   -h, --help                      Show this help text
 
 Environment variables:
   CONFIGURATION, DERIVED_DATA, XCODE_PROJECT, SCHEME, IOS_DEPLOY_DEVICE_ID,
-  DEVELOPMENT_TEAM, INSTALL
+  DEVELOPMENT_TEAM, INSTALL, ARCHIVE_PATH, EXPORT_DIR
 EOF
 }
 
@@ -53,6 +57,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --device)
       DEVICE_ID="$2"
+      shift 2
+      ;;
+    --archive)
+      ARCHIVE_PATH="$2"
+      shift 2
+      ;;
+    --export-dir)
+      EXPORT_DIR="$2"
       shift 2
       ;;
     --no-install)
@@ -98,37 +110,96 @@ if [[ -z "$TEAM_ID" ]]; then
   exit 2
 fi
 
-build_args=(
-  -project "$XCODE_PROJECT"
-  -scheme "$SCHEME"
-  -configuration "$CONFIGURATION"
-  -sdk "$SDK"
-  -destination "generic/platform=iOS"
-  -derivedDataPath "$DERIVED_DATA"
-  -allowProvisioningUpdates
-)
-
-if [[ -n "$TEAM_ID" ]]; then
-  build_args+=(DEVELOPMENT_TEAM="$TEAM_ID")
-fi
-
 echo "Using Apple Team ID: $TEAM_ID"
-build_args+=(build)
 
-echo "Building $SCHEME ($CONFIGURATION) for iPhone..."
-xcodebuild "${build_args[@]}"
+APP_PATH=""
+cleanup_dir=""
 
-APP_DIR="$DERIVED_DATA/Build/Products/${CONFIGURATION}-iphoneos"
-APP_PATH="$(find "$APP_DIR" -maxdepth 1 -name '*.app' -print -quit 2>/dev/null || true)"
+if [[ -n "$ARCHIVE_PATH" ]]; then
+  if [[ ! -d "$ARCHIVE_PATH" ]]; then
+    echo "Archive not found: $ARCHIVE_PATH" >&2
+    exit 1
+  fi
 
-if [[ -z "$APP_PATH" ]]; then
-  echo "Build succeeded, but no .app was found under $APP_DIR" >&2
-  exit 1
+  mkdir -p "$EXPORT_DIR"
+  export_plist="$(mktemp)"
+  cat >"$export_plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>development</string>
+  <key>signingStyle</key>
+  <string>automatic</string>
+  <key>teamID</key>
+  <string>$TEAM_ID</string>
+</dict>
+</plist>
+EOF
+
+  echo "Signing/exporting from archive: $ARCHIVE_PATH"
+  xcodebuild \
+    -exportArchive \
+    -archivePath "$ARCHIVE_PATH" \
+    -exportPath "$EXPORT_DIR" \
+    -exportOptionsPlist "$export_plist" \
+    -allowProvisioningUpdates
+
+  rm -f "$export_plist"
+
+  IPA_PATH="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.ipa' -print -quit 2>/dev/null || true)"
+  if [[ -z "$IPA_PATH" ]]; then
+    echo "Export succeeded, but no .ipa found under $EXPORT_DIR" >&2
+    exit 1
+  fi
+
+  cleanup_dir="$(mktemp -d)"
+  unzip -q "$IPA_PATH" -d "$cleanup_dir"
+  APP_PATH="$(find "$cleanup_dir/Payload" -maxdepth 1 -name '*.app' -print -quit 2>/dev/null || true)"
+
+  if [[ -z "$APP_PATH" ]]; then
+    echo "No .app found in exported IPA: $IPA_PATH" >&2
+    rm -rf "$cleanup_dir"
+    exit 1
+  fi
+
+  echo "Exported and signed IPA: $IPA_PATH"
+else
+  build_args=(
+    -project "$XCODE_PROJECT"
+    -scheme "$SCHEME"
+    -configuration "$CONFIGURATION"
+    -sdk "$SDK"
+    -destination "generic/platform=iOS"
+    -derivedDataPath "$DERIVED_DATA"
+    -allowProvisioningUpdates
+  )
+
+  if [[ -n "$TEAM_ID" ]]; then
+    build_args+=(DEVELOPMENT_TEAM="$TEAM_ID")
+  fi
+
+  build_args+=(build)
+
+  echo "Building $SCHEME ($CONFIGURATION) for iPhone..."
+  xcodebuild "${build_args[@]}"
+
+  APP_DIR="$DERIVED_DATA/Build/Products/${CONFIGURATION}-iphoneos"
+  APP_PATH="$(find "$APP_DIR" -maxdepth 1 -name '*.app' -print -quit 2>/dev/null || true)"
+
+  if [[ -z "$APP_PATH" ]]; then
+    echo "Build succeeded, but no .app was found under $APP_DIR" >&2
+    exit 1
+  fi
+
+  echo "Built app: $APP_PATH"
 fi
-
-echo "Built app: $APP_PATH"
 
 if [[ "$INSTALL" != "1" ]]; then
+  if [[ -n "$cleanup_dir" ]]; then
+    rm -rf "$cleanup_dir"
+  fi
   exit 0
 fi
 
@@ -163,5 +234,12 @@ The iPhone has not trusted this Mac yet.
 Unlock the iPhone and accept the trust prompt, or disconnect/reconnect the cable while the phone is unlocked.
 EOF
   fi
+  if [[ -n "$cleanup_dir" ]]; then
+    rm -rf "$cleanup_dir"
+  fi
   exit $deploy_status
+fi
+
+if [[ -n "$cleanup_dir" ]]; then
+  rm -rf "$cleanup_dir"
 fi

@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.collect
@@ -30,8 +31,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import nl.rvantwisk.gatas.lib.extensions.CobsByteArray
 import nl.rvantwisk.gatas.lib.extensions.MessageType
+import nl.rvantwisk.gatas.lib.extensions.deserializeAircraftConfigurationV1
+import nl.rvantwisk.gatas.lib.extensions.deserializeAircraftConfigurationV2
 import nl.rvantwisk.gatas.lib.extensions.deserializeGDL90V1
+import nl.rvantwisk.gatas.lib.extensions.serializeSetIcaoAddressV1
+import nl.rvantwisk.gatas.lib.models.SetIcaoAddressV1
 import nl.rvt.gatas.companion.GaTasDevice
 import nl.rvt.gatas.companion.Gdl90BridgeSettings
 import nl.rvt.gatas.companion.bluetooth.GATAS_PRIMARY_DEVICE
@@ -40,6 +46,7 @@ import nl.rvt.gatas.companion.bluetooth.GATAS_RXTX_CHARACTERISTIC
 import nl.rvt.gatas.companion.liveactivity.GatasLiveActivityBridge
 import nl.rvt.gatas.companion.stuff.toHex
 import nl.rvt.gatas.requestMtuIfSupported
+import kotlin.time.TimeSource
 import kotlin.uuid.ExperimentalUuidApi
 
 private val log = Logger.withTag(BlueToothBleService::class.simpleName ?: "BlueToothBleService")
@@ -50,6 +57,11 @@ class BlueToothBleService constructor(
     private val udpRelayService: GatasUdpRelayService = GatasUdpRelayService(),
     private val gdl90UdpBridgeService: Gdl90UdpBridgeService = Gdl90UdpBridgeService(),
 ) {
+    private enum class LinkSide {
+        Udp,
+        Ble,
+    }
+
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _status = MutableStateFlow(BridgeStatus())
@@ -63,11 +75,14 @@ class BlueToothBleService constructor(
 
     private var connectedPeripheral: Peripheral? = null
     private var reconnectJob: Job? = null
+    private var aircraftChangeJob: Job? = null
 
     companion object {
         private const val RECONNECT_SCAN_TIMEOUT_MILLIS = 5_000L
         private const val RECONNECT_RETRY_DELAY_MILLIS = 1_000L
         private const val SERVICE_DISCOVERY_TIMEOUT_MILLIS = 5_000L
+        private const val AIRCRAFT_CHANGE_TIMEOUT_MILLIS = 15_000L
+        private const val AIRCRAFT_CHANGE_RETRY_INTERVAL_MILLIS = 5_000L
         private val RELAYED_COBS_MESSAGE_TYPES = setOf(
             MessageType.AIRCRAFT_POSITION_REQUEST_V1.value,
             MessageType.AIRCRAFT_CONFIGURATIONS_V2.value,
@@ -149,6 +164,8 @@ class BlueToothBleService constructor(
     fun stop() {
         log.i { "Ble Service stopped" }
         scope.launch {
+            aircraftChangeJob?.cancel()
+            aircraftChangeJob = null
             reconnectJob?.cancel()
             reconnectJob = null
             connectedPeripheral?.disconnect()
@@ -169,6 +186,63 @@ class BlueToothBleService constructor(
                 )
             }
             GatasLiveActivityBridge.reset()
+        }
+    }
+
+    fun requestAircraftChange(icaoAddress: Long) {
+        scope.launch {
+            aircraftChangeJob?.cancelAndJoin()
+
+            val peripheral = connectedPeripheral
+            if (peripheral == null) {
+                _status.update {
+                    it.copy(
+                        aircraftChangeTargetIcaoAddress = null,
+                        lastError = "Bluetooth not connected",
+                        lastEvent = "Cannot change aircraft while disconnected",
+                    )
+                }
+                return@launch
+            }
+
+            aircraftChangeJob = launch {
+                _status.update {
+                    it.copy(
+                        aircraftChangeTargetIcaoAddress = icaoAddress,
+                        lastError = null,
+                        lastEvent = "Changing aircraft to ${icaoAddress.toIcaoHex()}",
+                    )
+                }
+
+                val startedAt = TimeSource.Monotonic.markNow()
+                while (startedAt.elapsedNow().inWholeMilliseconds < AIRCRAFT_CHANGE_TIMEOUT_MILLIS) {
+                    if (_status.value.ownshipConfiguration?.icaoAddress == icaoAddress) {
+                        finalizeAircraftChange(
+                            icaoAddress = icaoAddress,
+                            lastEvent = "Aircraft changed to ${icaoAddress.toIcaoHex()}",
+                        )
+                        return@launch
+                    }
+
+                    sendAircraftChangeCommand(peripheral, icaoAddress)
+                    delay(AIRCRAFT_CHANGE_RETRY_INTERVAL_MILLIS)
+                }
+
+                if (_status.value.ownshipConfiguration?.icaoAddress == icaoAddress) {
+                    finalizeAircraftChange(
+                        icaoAddress = icaoAddress,
+                        lastEvent = "Aircraft changed to ${icaoAddress.toIcaoHex()}",
+                    )
+                } else {
+                    _status.update {
+                        it.copy(
+                            aircraftChangeTargetIcaoAddress = null,
+                            lastError = "Timed out changing aircraft",
+                            lastEvent = "Aircraft change timed out",
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -263,13 +337,17 @@ class BlueToothBleService constructor(
                 peripheral.observe(characteristic)
                     .collect { chunk ->
                         chunk.forEach { byte ->
-                            if (byte == 0.toByte()) {
-                                if (frameBuffer.isNotEmpty()) {
-                                    val payload = frameBuffer.toByteArray()
-                                    frameBuffer.clear()
+                            frameBuffer += byte
+                            if (isFrameComplete(label, byte)) {
+                                val payload = framePayload(label, frameBuffer)
+                                frameBuffer.clear()
+
+                                if (payload.isNotEmpty()) {
                                     GatasLiveActivityBridge.recordPacket()
                                     _status.update {
-                                        it.copy(
+                                        it.recordPacket(
+                                            linkSide = LinkSide.Ble,
+                                            label = label,
                                             framesReceived = it.framesReceived + 1,
                                             bytesReceived = it.bytesReceived + payload.size,
                                             activeStream = label,
@@ -279,8 +357,6 @@ class BlueToothBleService constructor(
                                     }
                                     handleFrame(peripheral, characteristic, label, payload)
                                 }
-                            } else {
-                                frameBuffer += byte
                             }
                         }
                     }
@@ -297,6 +373,7 @@ class BlueToothBleService constructor(
         payload: ByteArray,
     ) {
         log.d { "📩 $label BLE -> UDP ${payload.toHex()}" }
+        maybeUpdateOwnshipConfiguration(label, payload)
         maybeBridgeGdl90Frame(label, payload)
 
         val relayDecision = relayDecision(label, payload)
@@ -314,7 +391,9 @@ class BlueToothBleService constructor(
         }
 
         _status.update {
-            it.copy(
+            it.recordPacket(
+                linkSide = LinkSide.Udp,
+                label = label,
                 serverActivityTick = it.serverActivityTick + 1,
                 lastEvent = "Relaying $label frame to UDP (${payload.size} bytes)"
             )
@@ -347,7 +426,9 @@ class BlueToothBleService constructor(
         }
 
         _status.update {
-            it.copy(
+            it.recordPacket(
+                linkSide = LinkSide.Udp,
+                label = label,
                 udpHealthy = true,
                 activeStream = label,
                 framesRelayed = it.framesRelayed + 1,
@@ -422,16 +503,61 @@ class BlueToothBleService constructor(
         }
     }
 
+    private fun maybeUpdateOwnshipConfiguration(label: String, payload: ByteArray) {
+        if (label != "COBS") {
+            return
+        }
+
+        val aircraftConfiguration = runCatching {
+            val cobsByteArray = CobsByteArray(payload)
+            when (cobsByteArray.peekAhead()) {
+                MessageType.AIRCRAFT_CONFIGURATIONS_V2.value -> deserializeAircraftConfigurationV2(cobsByteArray)
+                MessageType.AIRCRAFT_CONFIGURATIONS_V1.value -> deserializeAircraftConfigurationV1(cobsByteArray)
+                else -> null
+            }
+        }.getOrElse { error ->
+            log.w(error) { "Failed to decode aircraft configuration COBS frame" }
+            null
+        } ?: return
+
+        _status.update {
+            val clearedTarget = if (it.aircraftChangeTargetIcaoAddress == aircraftConfiguration.icaoAddress) {
+                null
+            } else {
+                it.aircraftChangeTargetIcaoAddress
+            }
+            it.copy(
+                ownshipConfiguration = aircraftConfiguration,
+                aircraftChangeTargetIcaoAddress = clearedTarget,
+                lastEvent = "Aircraft configuration received"
+            )
+        }
+
+        if (_status.value.aircraftChangeTargetIcaoAddress == null) {
+            aircraftChangeJob?.cancel()
+            aircraftChangeJob = null
+        }
+    }
+
     private suspend fun sendResponse(
         peripheral: Peripheral,
         characteristic: Characteristic,
         label: String,
         payload: ByteArray
     ) {
-        val framedPayload = if (payload.lastOrNull() == 0.toByte()) {
-            payload
-        } else {
-            payload + 0
+        val framedPayload = when (label) {
+            "NMEA" -> when {
+                payload.endsWithBytes('\r'.code.toByte(), '\n'.code.toByte()) -> payload
+                payload.lastOrNull() == '\n'.code.toByte() -> payload
+                payload.lastOrNull() == '\r'.code.toByte() -> payload + '\n'.code.toByte()
+                else -> payload + "\r\n".encodeToByteArray()
+            }
+
+            else -> if (payload.lastOrNull() == 0.toByte()) {
+                payload
+            } else {
+                payload + 0
+            }
         }
 
         val maxWriteSize = runCatching {
@@ -447,10 +573,168 @@ class BlueToothBleService constructor(
                 peripheral.write(characteristic, chunk)
             }
         _status.update {
-            it.copy(
+            it.recordPacket(
+                linkSide = LinkSide.Ble,
+                label = label,
                 gatasActivityTick = it.gatasActivityTick + 1,
                 lastEvent = "BLE response sent (${payload.size} bytes)"
             )
+        }
+    }
+
+    private fun isFrameComplete(label: String, byte: Byte): Boolean {
+        return when (label) {
+            "NMEA" -> byte == '\n'.code.toByte()
+            else -> byte == 0.toByte()
+        }
+    }
+
+    private fun framePayload(label: String, frameBuffer: List<Byte>): ByteArray {
+        return when (label) {
+            "NMEA" -> frameBuffer.toByteArray()
+            else -> frameBuffer.dropLast(1).toByteArray()
+        }
+    }
+
+    private fun ByteArray.endsWithBytes(vararg suffix: Byte): Boolean {
+        if (size < suffix.size) {
+            return false
+        }
+        return suffix.indices.all { index ->
+            this[size - suffix.size + index] == suffix[index]
+        }
+    }
+
+    private suspend fun sendAircraftChangeCommand(peripheral: Peripheral, icaoAddress: Long) {
+        val payload = SetIcaoAddressV1(icaoAddress).serializeSetIcaoAddressV1()
+        sendResponse(
+            peripheral = peripheral,
+            characteristic = cobsCharacteristic,
+            label = "COBS",
+            payload = payload,
+        )
+        _status.update {
+            it.copy(lastEvent = "Requested aircraft ${icaoAddress.toIcaoHex()}")
+        }
+    }
+
+    private fun finalizeAircraftChange(icaoAddress: Long, lastEvent: String) {
+        _status.update {
+            it.copy(
+                aircraftChangeTargetIcaoAddress = null,
+                lastError = null,
+                lastEvent = lastEvent,
+            )
+        }
+        aircraftChangeJob = null
+    }
+
+    private fun Long.toIcaoHex(): String = toString(16).uppercase().padStart(6, '0')
+
+    private fun BridgeStatus.recordPacket(
+        linkSide: LinkSide,
+        label: String,
+        framesReceived: Long = this.framesReceived,
+        framesRelayed: Long = this.framesRelayed,
+        bytesReceived: Long = this.bytesReceived,
+        bytesRelayed: Long = this.bytesRelayed,
+        activeStream: String? = this.activeStream,
+        serverActivityTick: Long = this.serverActivityTick,
+        gatasActivityTick: Long = this.gatasActivityTick,
+        udpHealthy: Boolean = this.udpHealthy,
+        lastEvent: String = this.lastEvent,
+        lastError: String? = this.lastError,
+    ): BridgeStatus {
+        return when (linkSide) {
+            LinkSide.Udp -> when (label) {
+                "NMEA" -> copy(
+                    framesReceived = framesReceived,
+                    framesRelayed = framesRelayed,
+                    bytesReceived = bytesReceived,
+                    bytesRelayed = bytesRelayed,
+                    activeStream = activeStream,
+                    serverActivityTick = serverActivityTick,
+                    gatasActivityTick = gatasActivityTick,
+                    udpHealthy = udpHealthy,
+                    lastEvent = lastEvent,
+                    lastError = lastError,
+                    udpNmeaPackets = udpNmeaPackets + 1,
+                    udpNmeaActivityTick = udpNmeaActivityTick + 1,
+                )
+
+                "COBS" -> copy(
+                    framesReceived = framesReceived,
+                    framesRelayed = framesRelayed,
+                    bytesReceived = bytesReceived,
+                    bytesRelayed = bytesRelayed,
+                    activeStream = activeStream,
+                    serverActivityTick = serverActivityTick,
+                    gatasActivityTick = gatasActivityTick,
+                    udpHealthy = udpHealthy,
+                    lastEvent = lastEvent,
+                    lastError = lastError,
+                    udpCobsPackets = udpCobsPackets + 1,
+                    udpCobsActivityTick = udpCobsActivityTick + 1,
+                )
+
+                else -> copy(
+                    framesReceived = framesReceived,
+                    framesRelayed = framesRelayed,
+                    bytesReceived = bytesReceived,
+                    bytesRelayed = bytesRelayed,
+                    activeStream = activeStream,
+                    serverActivityTick = serverActivityTick,
+                    gatasActivityTick = gatasActivityTick,
+                    udpHealthy = udpHealthy,
+                    lastEvent = lastEvent,
+                    lastError = lastError,
+                )
+            }
+
+            LinkSide.Ble -> when (label) {
+                "NMEA" -> copy(
+                    framesReceived = framesReceived,
+                    framesRelayed = framesRelayed,
+                    bytesReceived = bytesReceived,
+                    bytesRelayed = bytesRelayed,
+                    activeStream = activeStream,
+                    serverActivityTick = serverActivityTick,
+                    gatasActivityTick = gatasActivityTick,
+                    udpHealthy = udpHealthy,
+                    lastEvent = lastEvent,
+                    lastError = lastError,
+                    bleNmeaPackets = bleNmeaPackets + 1,
+                    bleNmeaActivityTick = bleNmeaActivityTick + 1,
+                )
+
+                "COBS" -> copy(
+                    framesReceived = framesReceived,
+                    framesRelayed = framesRelayed,
+                    bytesReceived = bytesReceived,
+                    bytesRelayed = bytesRelayed,
+                    activeStream = activeStream,
+                    serverActivityTick = serverActivityTick,
+                    gatasActivityTick = gatasActivityTick,
+                    udpHealthy = udpHealthy,
+                    lastEvent = lastEvent,
+                    lastError = lastError,
+                    bleCobsPackets = bleCobsPackets + 1,
+                    bleCobsActivityTick = bleCobsActivityTick + 1,
+                )
+
+                else -> copy(
+                    framesReceived = framesReceived,
+                    framesRelayed = framesRelayed,
+                    bytesReceived = bytesReceived,
+                    bytesRelayed = bytesRelayed,
+                    activeStream = activeStream,
+                    serverActivityTick = serverActivityTick,
+                    gatasActivityTick = gatasActivityTick,
+                    udpHealthy = udpHealthy,
+                    lastEvent = lastEvent,
+                    lastError = lastError,
+                )
+            }
         }
     }
 

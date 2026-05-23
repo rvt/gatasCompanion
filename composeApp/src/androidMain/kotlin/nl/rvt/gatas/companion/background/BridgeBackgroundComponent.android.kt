@@ -13,4 +13,8 @@ actual object BridgeBackgroundComponent {
     actual fun stop() {
         GatasBridgeForegroundService.stop(appContext)
     }
+
+    actual fun requestAircraftChange(icaoAddress: Long) {
+        GatasBridgeForegroundService.requestAircraftChange(appContext, icaoAddress)
+    }
 }

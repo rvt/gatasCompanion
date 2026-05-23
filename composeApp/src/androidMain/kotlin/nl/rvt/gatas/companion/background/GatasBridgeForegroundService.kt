@@ -63,6 +63,12 @@ class GatasBridgeForegroundService : Service() {
             }
 
             ACTION_STOP -> stopSelf()
+            ACTION_CHANGE_ICAO -> {
+                val icaoAddress = intent.getLongExtra(EXTRA_ICAO_ADDRESS, -1L)
+                if (icaoAddress >= 0) {
+                    bridgeService?.requestAircraftChange(icaoAddress)
+                }
+            }
         }
 
         return START_REDELIVER_INTENT
@@ -188,8 +194,10 @@ class GatasBridgeForegroundService : Service() {
     companion object {
         private const val ACTION_START = "nl.rvt.gatas.companion.background.action.START"
         private const val ACTION_STOP = "nl.rvt.gatas.companion.background.action.STOP"
+        private const val ACTION_CHANGE_ICAO = "nl.rvt.gatas.companion.background.action.CHANGE_ICAO"
         private const val EXTRA_IDENTIFIER = "extra_identifier"
         private const val EXTRA_NAME = "extra_name"
+        private const val EXTRA_ICAO_ADDRESS = "extra_icao_address"
         private const val CHANNEL_ID = "gatas_bridge"
         private const val CHANNEL_NAME = "GATAS Bridge"
         private const val NOTIFICATION_ID = 4242
@@ -212,6 +220,18 @@ class GatasBridgeForegroundService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, GatasBridgeForegroundService::class.java))
+        }
+
+        fun requestAircraftChange(context: Context, icaoAddress: Long) {
+            val intent = Intent(context, GatasBridgeForegroundService::class.java).apply {
+                action = ACTION_CHANGE_ICAO
+                putExtra(EXTRA_ICAO_ADDRESS, icaoAddress)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         }
     }
 }

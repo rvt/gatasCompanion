@@ -54,4 +54,8 @@ class BridgeBackgroundController(
         activeDevice = null
         _status.value = BridgeStatus()
     }
+
+    fun requestAircraftChange(icaoAddress: Long) {
+        activeService?.requestAircraftChange(icaoAddress)
+    }
 }
