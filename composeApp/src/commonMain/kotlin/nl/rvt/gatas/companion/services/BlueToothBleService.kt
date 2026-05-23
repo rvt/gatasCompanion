@@ -517,7 +517,7 @@ class BlueToothBleService constructor(
 
     private fun relayDecision(label: String, payload: ByteArray): RelayDecision {
         if (label != "COBS") {
-            return RelayDecision(shouldRelay = true, messageType = null)
+            return RelayDecision(shouldRelay = false, messageType = null)
         }
 
         val type = runCatching {
