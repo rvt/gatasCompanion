@@ -39,8 +39,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
@@ -59,11 +61,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import compose.icons.LineAwesomeIcons
+import compose.icons.lineawesomeicons.CogSolid
 import nl.rvt.gatas.PlatformKeepScreenOnEffect
+import nl.rvantwisk.gatas.lib.models.WifiMode
 import nl.rvt.gatas.companion.background.BridgeBackgroundComponent
 import nl.rvt.gatas.companion.services.BridgeStatus
 
@@ -75,6 +81,8 @@ fun ConnectScreen(
 ) {
     val scrollState = rememberScrollState()
     var showAircraftDialog by remember { mutableStateOf(false) }
+    var showGatasSettingsDialog by remember { mutableStateOf(false) }
+    var gatasBrowserHexCode by remember { mutableStateOf<String?>(null) }
     val ownshipConfiguration = bridgeStatus.ownshipConfiguration
     var aircraftPickerEntries by remember(ownshipConfiguration?.icaoAddressList) {
         mutableStateOf<List<AircraftPickerEntry>>(emptyList())
@@ -120,11 +128,14 @@ fun ConnectScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ConnectionInfoCard(
-            gatasHexCode = bridgeStatus.ownshipConfiguration?.gatasId?.toHexId() ?: "--------",
+            gatasHexCode = bridgeStatus.ownshipConfiguration?.gatasId?.toHexId()
+                ?: UNAVAILABLE_GATAS_ID,
             selectedAircraftCallsign = currentSelectedAircraftCallsign(
                 ownshipConfiguration = bridgeStatus.ownshipConfiguration,
                 aircraftPickerEntries = aircraftPickerEntries,
             ),
+            onOpenGatasDetails = { hexCode -> gatasBrowserHexCode = hexCode },
+            onOpenGatasSettings = { showGatasSettingsDialog = true },
             onChangeAircraft = { showAircraftDialog = true },
             changeAircraftEnabled = ownshipConfiguration != null,
         )
@@ -193,7 +204,24 @@ fun ConnectScreen(
             onDismiss = { showAircraftDialog = false },
         )
     }
+
+    if (showGatasSettingsDialog) {
+        GatasSettingsDialog(
+            bridgeStatus = bridgeStatus,
+            onRequestWifiModeChange = BridgeBackgroundComponent::requestWifiModeChange,
+            onDismiss = { showGatasSettingsDialog = false },
+        )
+    }
+
+    gatasBrowserHexCode?.let { hexCode ->
+        GatasBrowserDialog(
+            hexCode = hexCode,
+            onDismiss = { gatasBrowserHexCode = null },
+        )
+    }
 }
+
+private const val UNAVAILABLE_GATAS_ID = "--------"
 
 private fun UInt.toHexId(): String = toString(16).uppercase().padStart(8, '0')
 private fun Long.toIcaoHex(): String = toString(16).uppercase().padStart(6, '0')
@@ -214,9 +242,13 @@ private fun currentSelectedAircraftCallsign(
 private fun ConnectionInfoCard(
     gatasHexCode: String,
     selectedAircraftCallsign: String,
+    onOpenGatasDetails: (String) -> Unit,
+    onOpenGatasSettings: () -> Unit,
     onChangeAircraft: () -> Unit,
     changeAircraftEnabled: Boolean,
 ) {
+    val gatasHexCodeAvailable = gatasHexCode != UNAVAILABLE_GATAS_ID
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -241,12 +273,37 @@ private fun ConnectionInfoCard(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    text = gatasHexCode,
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onOpenGatasSettings) {
+                        Icon(
+                            imageVector = LineAwesomeIcons.CogSolid,
+                            contentDescription = "GATAS settings",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Text(
+                        text = gatasHexCode,
+                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp),
+                        fontWeight = FontWeight.Bold,
+                        color = if (gatasHexCodeAvailable) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        textDecoration = if (gatasHexCodeAvailable) {
+                            TextDecoration.Underline
+                        } else {
+                            TextDecoration.None
+                        },
+                        modifier = Modifier.clickable(
+                            enabled = gatasHexCodeAvailable,
+                            onClick = { onOpenGatasDetails(gatasHexCode) },
+                        )
+                    )
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -254,7 +311,7 @@ private fun ConnectionInfoCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Call-Sign",
+                    text = "Registration",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -268,6 +325,203 @@ private fun ConnectionInfoCard(
                         fontWeight = FontWeight.Bold,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GatasSettingsDialog(
+    bridgeStatus: BridgeStatus,
+    onRequestWifiModeChange: (WifiMode) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val currentWifiMode = bridgeStatus.ownshipConfiguration?.wifiMode
+    val pendingWifiMode = bridgeStatus.wifiModeChangeTarget
+    val wifiModeKnown = currentWifiMode == WifiMode.AP || currentWifiMode == WifiMode.CLIENT
+    val showPendingSpinner = pendingWifiMode != null && pendingWifiMode != currentWifiMode
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 480.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 20.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "GATAS Settings",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    OutlinedButton(onClick = onDismiss) {
+                        Text("Close")
+                    }
+                }
+
+                Text(
+                    text = "Wi-Fi Mode",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (currentWifiMode == WifiMode.AP) {
+                        Button(
+                            onClick = { onRequestWifiModeChange(WifiMode.AP) },
+                            enabled = wifiModeKnown && !showPendingSpinner,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("AP")
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { onRequestWifiModeChange(WifiMode.AP) },
+                            enabled = wifiModeKnown && !showPendingSpinner,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("AP")
+                        }
+                    }
+
+                    if (currentWifiMode == WifiMode.CLIENT) {
+                        Button(
+                            onClick = { onRequestWifiModeChange(WifiMode.CLIENT) },
+                            enabled = wifiModeKnown && !showPendingSpinner,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("CLIENT")
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { onRequestWifiModeChange(WifiMode.CLIENT) },
+                            enabled = wifiModeKnown && !showPendingSpinner,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("CLIENT")
+                        }
+                    }
+                }
+
+                Text(
+                    text = when (currentWifiMode) {
+                        WifiMode.NC -> "Current mode reported by GATAS: Not configured"
+                        WifiMode.AP -> "Current mode reported by GATAS: AP"
+                        WifiMode.CLIENT -> "Current mode reported by GATAS: Client"
+                        null -> "Current Wi-Fi mode is not available yet."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (showPendingSpinner) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Text(
+                            text = bridgeStatus.wifiModeStatusMessage
+                                ?: "Applying Wi-Fi mode change...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFFB26A00)
+                        )
+                    }
+                } else {
+                    bridgeStatus.wifiModeStatusMessage?.let { statusMessage ->
+                        Text(
+                            text = statusMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF2E7D32)
+                        )
+                    }
+                }
+
+                Text(
+                    text = if (showPendingSpinner) {
+                        "The selected button shows the last mode confirmed by GATAS. It changes only after the device reports the new mode."
+                    } else {
+                        "Changes are asynchronous. After you send a request, GATAS will report the active mode back here."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GatasBrowserDialog(
+    hexCode: String,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 760.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 20.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "GATAS Details",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    OutlinedButton(onClick = onDismiss) {
+                        Text("Back")
+                    }
+                }
+
+                EmbeddedWebView(
+                    url = "https://gatas.vantwisk.nl/#$hexCode",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = true)
+                        .clip(RoundedCornerShape(20.dp))
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                )
             }
         }
     }
@@ -410,7 +664,11 @@ private fun AircraftPickerCard(
                         .fillMaxWidth()
                         .height(10.dp)
                         .clip(RoundedCornerShape(999.dp))
-                        .background(if (pending) animatedSelectionBarColor() else MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                        .background(
+                            if (pending) animatedSelectionBarColor() else MaterialTheme.colorScheme.outline.copy(
+                                alpha = 0.18f
+                            )
+                        )
                 )
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -667,7 +925,8 @@ private fun EndpointMarker(
     accentColor: Color,
     active: Boolean,
 ) {
-    val bubbleColor = if (active) accentColor.copy(alpha = 0.18f) else accentColor.copy(alpha = 0.12f)
+    val bubbleColor =
+        if (active) accentColor.copy(alpha = 0.18f) else accentColor.copy(alpha = 0.12f)
 
     Box(
         modifier = Modifier

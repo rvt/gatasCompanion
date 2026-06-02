@@ -6,7 +6,10 @@ import nl.rvantwisk.gatas.lib.models.AircraftPosition
 import nl.rvantwisk.gatas.lib.models.OwnshipAircraftConfiguration
 import nl.rvantwisk.gatas.lib.models.OwnshipPosition
 import nl.rvantwisk.gatas.lib.models.SetIcaoAddressV1
+import nl.rvantwisk.gatas.lib.models.WifiMode
 import kotlin.math.roundToInt
+
+private const val AIRCRAFT_CONFIGURATION_WIFI_MODE_MASK = 0x03
 
 /**
  * Encode a AircraftPosition to a COBS array.
@@ -122,7 +125,8 @@ fun deserializeAircraftConfigurationV1(cobs: CobsByteArray): OwnshipAircraftConf
         icaoAddressList = icaoAddressList,
         gatasIp = gatasIp,
         version = -1,
-        pinCode = -1
+        pinCode = -1,
+        wifiMode = null,
     )
 }
 
@@ -132,7 +136,9 @@ fun deserializeAircraftConfigurationV2(cobs: CobsByteArray): OwnshipAircraftConf
     // Example: 04.00....
     require(type == MessageType.AIRCRAFT_CONFIGURATIONS_V2.value) { "Invalid type byte: $type" }
 
-    cobs.getInt1() // reserved
+    val flags = cobs.getInt1()
+    val wifiMode = WifiMode.fromUByte((flags and AIRCRAFT_CONFIGURATION_WIFI_MODE_MASK).toUByte())
+        ?: WifiMode.NC
 
     val gatasId = cobs.getUInt4()
     val gatasIp = cobs.getUInt4()
@@ -153,7 +159,8 @@ fun deserializeAircraftConfigurationV2(cobs: CobsByteArray): OwnshipAircraftConf
         icaoAddressList = icaoAddressList,
         gatasIp = gatasIp,
         version = version.toInt(),
-        pinCode = pinCode.toInt()
+        pinCode = pinCode.toInt(),
+        wifiMode = wifiMode,
     )
 }
 
@@ -162,6 +169,13 @@ fun SetIcaoAddressV1.serializeSetIcaoAddressV1(): ByteArray {
     val cobsBuffer = CobsByteArray(4)
     cobsBuffer.put1(MessageType.SET_ICAO_ADDRESS_V1.value)
     cobsBuffer.putUInt3(this.icaoAddress)
+    return cobsBuffer.getCobs()
+}
+
+fun WifiMode.serializeSetWifiModeV1(): ByteArray {
+    val cobsBuffer = CobsByteArray(2)
+    cobsBuffer.put1(MessageType.SET_WIFI_MODE_V1.value)
+    cobsBuffer.put1(value)
     return cobsBuffer.getCobs()
 }
 

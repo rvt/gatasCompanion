@@ -36,7 +36,9 @@ import nl.rvantwisk.gatas.lib.extensions.deserializeAircraftConfigurationV1
 import nl.rvantwisk.gatas.lib.extensions.deserializeAircraftConfigurationV2
 import nl.rvantwisk.gatas.lib.extensions.deserializeGDL90V1
 import nl.rvantwisk.gatas.lib.extensions.serializeSetIcaoAddressV1
+import nl.rvantwisk.gatas.lib.extensions.serializeSetWifiModeV1
 import nl.rvantwisk.gatas.lib.models.SetIcaoAddressV1
+import nl.rvantwisk.gatas.lib.models.WifiMode
 import nl.rvt.gatas.companion.GaTasDevice
 import nl.rvt.gatas.companion.Gdl90BridgeSettings
 import nl.rvt.gatas.companion.bluetooth.GATAS_PRIMARY_DEVICE
@@ -252,6 +254,46 @@ class BlueToothBleService constructor(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    fun requestWifiModeChange(mode: WifiMode) {
+        scope.launch {
+            val peripheral = connectedPeripheral
+            if (peripheral == null) {
+                _status.update {
+                    it.copy(
+                        wifiModeChangeTarget = null,
+                        wifiModeStatusMessage = "Bluetooth not connected. Cannot change Wi-Fi mode.",
+                        lastError = "Bluetooth not connected",
+                        lastEvent = "Cannot change Wi-Fi mode while disconnected",
+                    )
+                }
+                return@launch
+            }
+
+            val currentWifiMode = _status.value.ownshipConfiguration?.wifiMode
+            if (currentWifiMode == mode) {
+                _status.update {
+                    it.copy(
+                        wifiModeChangeTarget = null,
+                        wifiModeStatusMessage = "GATAS is already using ${mode.displayName()} mode.",
+                        lastError = null,
+                        lastEvent = "Wi-Fi mode already ${mode.displayName()}",
+                    )
+                }
+                return@launch
+            }
+
+            sendWifiModeChangeCommand(peripheral, mode)
+            _status.update {
+                it.copy(
+                    wifiModeChangeTarget = mode,
+                    wifiModeStatusMessage = "Request sent. Waiting for GATAS to report ${mode.displayName()} mode.",
+                    lastError = null,
+                    lastEvent = "Requested Wi-Fi ${mode.displayName()} mode",
+                )
             }
         }
     }
@@ -599,9 +641,16 @@ class BlueToothBleService constructor(
             } else {
                 it.aircraftChangeTargetIcaoAddress
             }
+            val wifiModeChangeApplied = it.wifiModeChangeTarget != null &&
+                aircraftConfiguration.wifiMode == it.wifiModeChangeTarget
             it.copy(
                 ownshipConfiguration = aircraftConfiguration,
                 aircraftChangeTargetIcaoAddress = clearedTarget,
+                wifiModeChangeTarget = if (wifiModeChangeApplied) null else it.wifiModeChangeTarget,
+                wifiModeStatusMessage = when {
+                    wifiModeChangeApplied -> "GATAS reported ${aircraftConfiguration.wifiMode.displayName()} mode. The change is active."
+                    else -> it.wifiModeStatusMessage
+                },
                 lastEvent = "Aircraft configuration received"
             )
         }
@@ -691,6 +740,16 @@ class BlueToothBleService constructor(
         }
     }
 
+    private suspend fun sendWifiModeChangeCommand(peripheral: Peripheral, mode: WifiMode) {
+        val payload = mode.serializeSetWifiModeV1()
+        sendResponse(
+            peripheral = peripheral,
+            characteristic = cobsCharacteristic,
+            label = "COBS",
+            payload = payload,
+        )
+    }
+
     private fun finalizeAircraftChange(icaoAddress: Long, lastEvent: String) {
         _status.update {
             it.copy(
@@ -703,6 +762,11 @@ class BlueToothBleService constructor(
     }
 
     private fun Long.toIcaoHex(): String = toString(16).uppercase().padStart(6, '0')
+    private fun WifiMode.displayName(): String = when (this) {
+        WifiMode.NC -> "Not configured"
+        WifiMode.AP -> "AP"
+        WifiMode.CLIENT -> "Client"
+    }
 
     private fun BridgeStatus.recordPacket(
         linkSide: LinkSide,

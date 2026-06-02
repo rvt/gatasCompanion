@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import nl.rvantwisk.gatas.lib.models.WifiMode
 import nl.rvt.gatas.companion.GaTasDevice
 import nl.rvt.gatas.companion.services.BlueToothBleService
 import nl.rvt.gatas.companion.services.BridgeStatus
@@ -57,5 +58,9 @@ class BridgeBackgroundController(
 
     fun requestAircraftChange(icaoAddress: Long) {
         activeService?.requestAircraftChange(icaoAddress)
+    }
+
+    fun requestWifiModeChange(mode: WifiMode) {
+        activeService?.requestWifiModeChange(mode)
     }
 }

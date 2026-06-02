@@ -1,5 +1,6 @@
 package nl.rvt.gatas.companion.background
 
+import nl.rvantwisk.gatas.lib.models.WifiMode
 import nl.rvt.gatas.companion.GaTasDevice
 
 actual object BridgeBackgroundComponent {
@@ -17,5 +18,9 @@ actual object BridgeBackgroundComponent {
 
     actual fun requestAircraftChange(icaoAddress: Long) {
         controller.requestAircraftChange(icaoAddress)
+    }
+
+    actual fun requestWifiModeChange(mode: WifiMode) {
+        controller.requestWifiModeChange(mode)
     }
 }

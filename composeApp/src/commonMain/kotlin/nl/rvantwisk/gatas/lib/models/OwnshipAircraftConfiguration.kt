@@ -12,7 +12,7 @@ data class OwnshipAircraftConfiguration(
     val gatasIp: UInt,
     val pinCode: Int,
     val version: Int,
+    val wifiMode: WifiMode? = null,
 )
-
 
 

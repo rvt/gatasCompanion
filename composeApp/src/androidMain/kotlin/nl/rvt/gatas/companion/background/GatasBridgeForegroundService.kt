@@ -28,6 +28,7 @@ import nl.rvt.gatas.MainActivity
 import nl.rvt.gatas.companion.services.BlueToothBleService
 import nl.rvt.gatas.companion.services.BridgeStatus
 import nl.rvt.gatas.companion.services.GatasUdpRelayService
+import nl.rvantwisk.gatas.lib.models.WifiMode
 
 class GatasBridgeForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -67,6 +68,13 @@ class GatasBridgeForegroundService : Service() {
                 val icaoAddress = intent.getLongExtra(EXTRA_ICAO_ADDRESS, -1L)
                 if (icaoAddress >= 0) {
                     bridgeService?.requestAircraftChange(icaoAddress)
+                }
+            }
+            ACTION_CHANGE_WIFI_MODE -> {
+                val wifiModeName = intent.getStringExtra(EXTRA_WIFI_MODE)
+                val wifiMode = wifiModeName?.let { runCatching { WifiMode.valueOf(it) }.getOrNull() }
+                if (wifiMode != null) {
+                    bridgeService?.requestWifiModeChange(wifiMode)
                 }
             }
         }
@@ -195,9 +203,11 @@ class GatasBridgeForegroundService : Service() {
         private const val ACTION_START = "nl.rvt.gatas.companion.background.action.START"
         private const val ACTION_STOP = "nl.rvt.gatas.companion.background.action.STOP"
         private const val ACTION_CHANGE_ICAO = "nl.rvt.gatas.companion.background.action.CHANGE_ICAO"
+        private const val ACTION_CHANGE_WIFI_MODE = "nl.rvt.gatas.companion.background.action.CHANGE_WIFI_MODE"
         private const val EXTRA_IDENTIFIER = "extra_identifier"
         private const val EXTRA_NAME = "extra_name"
         private const val EXTRA_ICAO_ADDRESS = "extra_icao_address"
+        private const val EXTRA_WIFI_MODE = "extra_wifi_mode"
         private const val CHANNEL_ID = "gatas_bridge"
         private const val CHANNEL_NAME = "GATAS Bridge"
         private const val NOTIFICATION_ID = 4242
@@ -226,6 +236,18 @@ class GatasBridgeForegroundService : Service() {
             val intent = Intent(context, GatasBridgeForegroundService::class.java).apply {
                 action = ACTION_CHANGE_ICAO
                 putExtra(EXTRA_ICAO_ADDRESS, icaoAddress)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun requestWifiModeChange(context: Context, mode: WifiMode) {
+            val intent = Intent(context, GatasBridgeForegroundService::class.java).apply {
+                action = ACTION_CHANGE_WIFI_MODE
+                putExtra(EXTRA_WIFI_MODE, mode.name)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)

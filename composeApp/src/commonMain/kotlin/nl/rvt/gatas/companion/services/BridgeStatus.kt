@@ -1,6 +1,7 @@
 package nl.rvt.gatas.companion.services
 
 import nl.rvantwisk.gatas.lib.models.OwnshipAircraftConfiguration
+import nl.rvantwisk.gatas.lib.models.WifiMode
 
 data class BridgeStatus(
     val running: Boolean = false,
@@ -29,6 +30,8 @@ data class BridgeStatus(
     val gdl90ActivityTick: Long = 0,
     val ownshipConfiguration: OwnshipAircraftConfiguration? = null,
     val aircraftChangeTargetIcaoAddress: Long? = null,
+    val wifiModeChangeTarget: WifiMode? = null,
+    val wifiModeStatusMessage: String? = null,
     val lastEvent: String = "Idle",
     val lastError: String? = null,
 ) {
