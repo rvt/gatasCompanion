@@ -7,13 +7,15 @@ class CobsByteArray {
   private val buffer: ByteArray
   var offset: Int = 0
 
+  // rawSize is the number of message bytes to store before COBS encoding.
+  // It excludes the extra bytes reserved internally for COBS bookkeeping.
   constructor(rawSize: Int) {
-    //if (rawSize > 253) throw IllegalArgumentException()
+    require(rawSize in 0..253) { "rawSize must be between 0 and 253 bytes, was $rawSize" }
     buffer = ByteArray(rawSize + COBS_MINIMAL_EXTRA_BYTES)
   }
 
   constructor(buffer: ByteArray) {
-    //if (buffer.size > 253) throw IllegalArgumentException()
+    require(buffer.size <= 253) { "buffer size must be at most 253 bytes, was ${buffer.size}" }
     this.buffer = buffer.cobsDecode()
   }
 
@@ -44,17 +46,17 @@ class CobsByteArray {
     buffer[offset++] = value.toByte()
   }
 
-    fun putUInt3(value: UInt) {
-        buffer[offset++] = (value shr 16).toByte()
-        buffer[offset++] = (value shr 8).toByte()
-        buffer[offset++] = value.toByte()
-    }
+  fun putUInt3(value: UInt) {
+    buffer[offset++] = (value shr 16).toByte()
+    buffer[offset++] = (value shr 8).toByte()
+    buffer[offset++] = value.toByte()
+  }
 
-    fun putUInt3(value: Long) {
-        buffer[offset++] = (value shr 16).toByte()
-        buffer[offset++] = (value shr 8).toByte()
-        buffer[offset++] = value.toByte()
-    }
+  fun putUInt3(value: Long) {
+    buffer[offset++] = (value shr 16).toByte()
+    buffer[offset++] = (value shr 8).toByte()
+    buffer[offset++] = value.toByte()
+  }
 
   fun put2(value: Short) {
     buffer[offset++] = (value.toInt() shr 8).toByte()
@@ -92,7 +94,7 @@ class CobsByteArray {
 
   fun get2(): Short {
     val value = ((buffer[offset].toInt() and 0xFF) shl 8) or
-      (buffer[offset + 1].toInt() and 0xFF)
+            (buffer[offset + 1].toInt() and 0xFF)
     offset += 2
     return value.toShort()
   }
@@ -107,22 +109,22 @@ class CobsByteArray {
 
   fun getInt2(): Int {
     val value = ((buffer[offset].toInt() and 0xFF) shl 8) or
-      (buffer[offset + 1].toInt() and 0xFF)
+            (buffer[offset + 1].toInt() and 0xFF)
     offset += 2
     return value
   }
 
   fun getUInt2(): UInt {
     val value = ((buffer[offset].toUInt() and 255u) shl 8) or
-      (buffer[offset + 1].toUInt() and 255u)
+            (buffer[offset + 1].toUInt() and 255u)
     offset += 2
     return value
   }
 
   fun getInt3(): Int {
     val value = ((buffer[offset].toInt() and 0xFF) shl 16) or
-      ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
-      (buffer[offset + 2].toInt() and 0xFF)
+            ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
+            (buffer[offset + 2].toInt() and 0xFF)
     offset += 3
     return value
   }
@@ -130,39 +132,39 @@ class CobsByteArray {
 
   fun getUInt3(): UInt {
     val value = ((buffer[offset].toUInt() and 255u) shl 16) or
-      ((buffer[offset + 1].toUInt() and 255u) shl 8) or
-      (buffer[offset + 2].toUInt() and 255u)
+            ((buffer[offset + 1].toUInt() and 255u) shl 8) or
+            (buffer[offset + 2].toUInt() and 255u)
     offset += 3
     return value
   }
 
   fun getUInt4(): UInt {
     val value = ((buffer[offset].toUInt() and 255u) shl 24) or
-      ((buffer[offset + 1].toUInt() and 255u) shl 16) or
-      ((buffer[offset + 2].toUInt() and 255u) shl 8) or
-      (buffer[offset + 3].toUInt() and 255u)
+            ((buffer[offset + 1].toUInt() and 255u) shl 16) or
+            ((buffer[offset + 2].toUInt() and 255u) shl 8) or
+            (buffer[offset + 3].toUInt() and 255u)
     offset += 4
     return value
   }
 
   fun getLong8(): Long {
     val value = ((buffer[offset].toLong() and 0xFF) shl 56) or
-      ((buffer[offset + 1].toLong() and 0xFF) shl 48) or
-      ((buffer[offset + 2].toLong() and 0xFF) shl 40) or
-      ((buffer[offset + 3].toLong() and 0xFF) shl 32) or
-      ((buffer[offset + 4].toLong() and 0xFF) shl 24) or
-      ((buffer[offset + 5].toLong() and 0xFF) shl 16) or
-      ((buffer[offset + 6].toLong() and 0xFF) shl 8)  or
-      (buffer[offset + 7].toLong() and 0xFF)
+            ((buffer[offset + 1].toLong() and 0xFF) shl 48) or
+            ((buffer[offset + 2].toLong() and 0xFF) shl 40) or
+            ((buffer[offset + 3].toLong() and 0xFF) shl 32) or
+            ((buffer[offset + 4].toLong() and 0xFF) shl 24) or
+            ((buffer[offset + 5].toLong() and 0xFF) shl 16) or
+            ((buffer[offset + 6].toLong() and 0xFF) shl 8)  or
+            (buffer[offset + 7].toLong() and 0xFF)
     offset += 8
     return value
   }
 
   fun getInt4(): Int {
     val value = ((buffer[offset].toInt() and 0xFF) shl 24) or
-      ((buffer[offset + 1].toInt() and 0xFF) shl 16) or
-      ((buffer[offset + 2].toInt() and 0xFF) shl 8) or
-      (buffer[offset + 3].toInt() and 0xFF)
+            ((buffer[offset + 1].toInt() and 0xFF) shl 16) or
+            ((buffer[offset + 2].toInt() and 0xFF) shl 8) or
+            (buffer[offset + 3].toInt() and 0xFF)
     offset += 4
     return value
   }

@@ -10,7 +10,8 @@ enum class MessageType(val value: Int) {
     SET_ICAO_ADDRESS_V1(4),
     AIRCRAFT_CONFIGURATIONS_V2(5),
     GDL90_V1(6),
-    SET_WIFI_MODE_V1(7)
+    SET_WIFI_MODE_V1(7),
+    AIRCRAFT_POSITION_TYPE_V2(8)
 }
 
 // Variables name in REDIS store

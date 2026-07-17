@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -141,8 +142,12 @@ fun ConnectScreen(
         )
 
         LinkStatusCard(
-            leftLabel = "GATAS Server",
-            rightLabel = "Phone",
+            leftEndpoint = RouteEndpoint(
+                label = "GATAS",
+            ),
+            rightEndpoint = RouteEndpoint(
+                label = "Phone",
+            ),
             connected = bridgeStatus.udpHealthy,
             statusText = if (bridgeStatus.udpHealthy) {
                 "Connected via UDP"
@@ -157,8 +162,12 @@ fun ConnectScreen(
         )
 
         LinkStatusCard(
-            leftLabel = "Phone",
-            rightLabel = "GATAS",
+            leftEndpoint = RouteEndpoint(
+                label = "Phone",
+            ),
+            rightEndpoint = RouteEndpoint(
+                label = "GATAS",
+            ),
             connected = bridgeStatus.bleConnected,
             statusText = when {
                 bridgeStatus.bleConnected -> "Connected via Bluetooth"
@@ -723,8 +732,8 @@ private fun animatedSelectionBarColor(): Color {
 
 @Composable
 private fun LinkStatusCard(
-    leftLabel: String,
-    rightLabel: String,
+    leftEndpoint: RouteEndpoint,
+    rightEndpoint: RouteEndpoint,
     connected: Boolean,
     statusText: String,
     nmeaPackets: Long,
@@ -751,8 +760,8 @@ private fun LinkStatusCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             ConnectionRoute(
-                leftLabel = leftLabel,
-                rightLabel = rightLabel,
+                leftEndpoint = leftEndpoint,
+                rightEndpoint = rightEndpoint,
                 connected = connected,
                 statusColor = activeColor,
                 packetCount = totalPackets,
@@ -809,8 +818,12 @@ private fun Gdl90BridgeCard(status: BridgeStatus) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             ConnectionRoute(
-                leftLabel = "Phone",
-                rightLabel = "localhost",
+                leftEndpoint = RouteEndpoint(
+                    label = "Phone",
+                ),
+                rightEndpoint = RouteEndpoint(
+                    label = "Localhost",
+                ),
                 connected = active,
                 statusColor = textColor,
                 packetCount = status.gdl90FramesBridged,
@@ -839,84 +852,125 @@ private fun Gdl90BridgeCard(status: BridgeStatus) {
 
 @Composable
 private fun ConnectionRoute(
-    leftLabel: String,
-    rightLabel: String,
+    leftEndpoint: RouteEndpoint,
+    rightEndpoint: RouteEndpoint,
     connected: Boolean,
     statusColor: Color,
     packetCount: Long,
 ) {
-    Column(
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        LabeledEndpointMarker(leftEndpoint, statusColor, connected)
+        TrafficFlowLanes(
+            connected = connected,
+            color = statusColor,
+            packetCount = packetCount,
+            modifier = Modifier
+                .weight(1f)
+                .height(44.dp)
+                .padding(horizontal = 8.dp),
+        )
+        LabeledEndpointMarker(rightEndpoint, statusColor, connected)
+    }
+}
+
+private data class RouteEndpoint(
+    val label: String,
+)
+
+private const val WALKING_ANTS_PIXELS_PER_PACKET = 8f
+private const val WALKING_ANTS_ANIMATION_DURATION_MS = 480
+
+@Composable
+private fun LabeledEndpointMarker(
+    endpoint: RouteEndpoint,
+    accentColor: Color,
+    active: Boolean,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        EndpointMarker(
+            accentColor = accentColor,
+            active = active,
+        )
+        Text(
+            text = endpoint.label,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontSize = MaterialTheme.typography.bodyLarge.fontSize * 0.75f,
+            ),
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun TrafficFlowLanes(
+    connected: Boolean,
+    color: Color,
+    packetCount: Long,
+    modifier: Modifier = Modifier,
+) {
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val animatedDistance = remember { Animatable(0f) }
+    var previousPacketCount by remember { mutableStateOf(packetCount) }
+    var targetDistance by remember { mutableStateOf(0f) }
+
+    LaunchedEffect(packetCount) {
+        val packetDelta = (packetCount - previousPacketCount).coerceAtLeast(0L)
+        previousPacketCount = packetCount
+        if (packetDelta == 0L) return@LaunchedEffect
+
+        targetDistance += packetDelta.toFloat() * WALKING_ANTS_PIXELS_PER_PACKET
+        animatedDistance.animateTo(
+            targetValue = targetDistance,
+            animationSpec = tween(
+                durationMillis = WALKING_ANTS_ANIMATION_DURATION_MS,
+                easing = FastOutSlowInEasing,
+            ),
+        )
+    }
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
         ) {
-            EndpointMarker(
-                accentColor = statusColor,
-                active = connected,
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(4.dp)
-                    .background(statusColor, RoundedCornerShape(999.dp))
-            )
-            Box(
-                modifier = Modifier
-                    .padding(horizontal = 8.dp)
-                    .size(26.dp)
-                    .background(statusColor.copy(alpha = 0.16f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (connected) "✓" else "!",
-                    color = statusColor,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodyLarge
-                )
+            val topY = size.height * 0.32f
+            val bottomY = size.height * 0.68f
+            val lineWidth = 1.dp.toPx()
+            val dotRadius = 1.5.dp.toPx()
+            val dotSpacing = 15.dp.toPx()
+            val offset = animatedDistance.value % dotSpacing
+            val lineColor = color.copy(alpha = if (connected) 0.42f else 0.24f)
+
+            drawLine(lineColor, Offset(0f, topY), Offset(size.width, topY), lineWidth)
+            drawLine(lineColor, Offset(0f, bottomY), Offset(size.width, bottomY), lineWidth)
+
+            if (connected) {
+                var x = -dotSpacing
+                while (x <= size.width + dotSpacing) {
+                    drawCircle(color = color, radius = dotRadius, center = Offset(x - offset, topY))
+                    drawCircle(color = color, radius = dotRadius, center = Offset(x + offset, bottomY))
+                    x += dotSpacing
+                }
             }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(4.dp)
-                    .background(statusColor, RoundedCornerShape(999.dp))
-            )
-            EndpointMarker(
-                accentColor = statusColor,
-                active = connected,
-            )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = leftLabel,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = packetCountLabel(packetCount),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-            Text(
-                text = rightLabel,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.End,
-                modifier = Modifier.weight(1f)
-            )
-        }
+
+        Text(
+            text = packetCount.toString(),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .background(surfaceColor, RoundedCornerShape(6.dp))
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        )
     }
 }
 
@@ -937,7 +991,7 @@ private fun EndpointMarker(
         Box(
             modifier = Modifier
                 .size(12.dp)
-                .background(accentColor, CircleShape)
+                .background(accentColor, CircleShape),
         )
     }
 }
@@ -1044,8 +1098,4 @@ private fun ActivityPropeller(
             radius = size.minDimension * 0.2f
         )
     }
-}
-
-private fun packetCountLabel(count: Long): String {
-    return "$count ${if (count == 1L) "packet" else "packets"}"
 }

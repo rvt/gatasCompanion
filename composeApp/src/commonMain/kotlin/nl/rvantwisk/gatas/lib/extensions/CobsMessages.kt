@@ -15,32 +15,69 @@ private const val AIRCRAFT_CONFIGURATION_WIFI_MODE_MASK = 0x03
  * Encode a AircraftPosition to a COBS array.
  * Application -> GATAS
  */
+@Deprecated("Use serializeAircraftPositionV2")
 fun AircraftPosition.serializeAircraftPositionV1(): ByteArray {
     val eh = requireNotNull(ellipsoidHeight) {
         "ellipsoidHeight must be set before serialization (aircraft id=$id)"
     }
-    val RAW_ARRAY_SIZE = 24
+    val RAW_ARRAY_SIZE = 23 // Includes zero byte
     val callSignBytes = callSign.take(MAX_CALLSIGN_LENGTH).encodeToByteArray()
 
     val cobsBuffer = CobsByteArray(RAW_ARRAY_SIZE + callSignBytes.size)
 
     // @formatter:off
-  cobsBuffer.put1(MessageType.AIRCRAFT_POSITION_TYPE_V1.value)
-  cobsBuffer.putUInt3(id)
-  cobsBuffer.put1(addressType.value.toByte())
-  cobsBuffer.put1(dataSource.value.toByte())
-  cobsBuffer.putInt4((latitude * 1E7).roundToInt().coerceIn(Int.MIN_VALUE, Int.MAX_VALUE))
-  cobsBuffer.putInt4((longitude * 1E7).roundToInt().coerceIn(Int.MIN_VALUE, Int.MAX_VALUE))
-  cobsBuffer.put2(((eh.coerceIn(-100, 65535-100)) + 100).toShort())
-  cobsBuffer.put1((course / (360.0 / 255.0)).toInt().coerceIn(0, 255).toByte())
-  cobsBuffer.put1((hTurnRate.coerceIn(-25.0, 25.0) * 5).roundToInt().toByte())
-  cobsBuffer.put2((groundSpeed.coerceIn(0.0, 655.0) * 100).roundToInt().toShort())
-  cobsBuffer.put2((verticalSpeed.coerceIn(-32.0, 32.0) * 1024).roundToInt().toShort())
-  cobsBuffer.put1(aircraftCategory.value.toByte())
-  cobsBuffer.putArray(callSignBytes)
-  // @formatter:off
+    cobsBuffer.put1(MessageType.AIRCRAFT_POSITION_TYPE_V1.value)
+    cobsBuffer.putUInt3(id)
+    cobsBuffer.put1(addressType.value.toByte())
+    cobsBuffer.put1(dataSource.value.toByte())
+    cobsBuffer.putInt4((latitude * 1E7).roundToInt().coerceIn(Int.MIN_VALUE, Int.MAX_VALUE))
+    cobsBuffer.putInt4((longitude * 1E7).roundToInt().coerceIn(Int.MIN_VALUE, Int.MAX_VALUE))
+    cobsBuffer.put2(((eh.coerceIn(-100, 65535-100)) + 100).toShort())
+    cobsBuffer.put1((course / (360.0 / 255.0)).toInt().coerceIn(0, 255).toByte())
+    cobsBuffer.put1((hTurnRate.coerceIn(-25.0, 25.0) * 5).roundToInt().toByte())
+    cobsBuffer.put2((groundSpeed.coerceIn(0.0, 655.0) * 100).roundToInt().toShort())
+    cobsBuffer.put2((verticalSpeed.coerceIn(-32.0, 32.0) * 1024).roundToInt().toShort())
+    cobsBuffer.put1(aircraftCategory.value.toByte())
+    cobsBuffer.putArray(callSignBytes)
+    // @formatter:off
 
-  return cobsBuffer.getCobs()
+    return cobsBuffer.getCobs()
+}
+
+/**
+ * Encode a AircraftPosition to a COBS array with position time in ms since current minute.
+ * Application -> GATAS
+ */
+fun AircraftPosition.serializeAircraftPositionV2(): ByteArray {
+    val eh = requireNotNull(ellipsoidHeight) {
+        "ellipsoidHeight must be set before serialization (aircraft id=$id)"
+    }
+    val positionTimeMs = getPositionTimeMsIntoCurrentMinute()
+    val squawkCode = squawk.coerceIn(-1, 9999)
+    val RAW_ARRAY_SIZE = 27
+    val callSignBytes = callSign.take(MAX_CALLSIGN_LENGTH).encodeToByteArray()
+
+    val cobsBuffer = CobsByteArray(RAW_ARRAY_SIZE + callSignBytes.size)
+
+    // @formatter:off
+    cobsBuffer.put1(MessageType.AIRCRAFT_POSITION_TYPE_V2.value)
+    cobsBuffer.put2(positionTimeMs.toShort())
+    cobsBuffer.putUInt3(id)
+    cobsBuffer.put1(addressType.value.toByte())
+    cobsBuffer.put1(dataSource.value.toByte())
+    cobsBuffer.putInt4((latitude * 1E7).roundToInt().coerceIn(Int.MIN_VALUE, Int.MAX_VALUE))
+    cobsBuffer.putInt4((longitude * 1E7).roundToInt().coerceIn(Int.MIN_VALUE, Int.MAX_VALUE))
+    cobsBuffer.put2(((eh.coerceIn(-100, 65535-100)) + 100).toShort())
+    cobsBuffer.put1((course / (360.0 / 255.0)).toInt().coerceIn(0, 255).toByte())
+    cobsBuffer.put1((hTurnRate.coerceIn(-25.0, 25.0) * 5).roundToInt().toByte())
+    cobsBuffer.put2((groundSpeed.coerceIn(0.0, 655.0) * 100).roundToInt().toShort())
+    cobsBuffer.put2((verticalSpeed.coerceIn(-32.0, 32.0) * 1024).roundToInt().toShort())
+    cobsBuffer.put1(aircraftCategory.value.toByte())
+    cobsBuffer.put2(squawkCode.toShort())
+    cobsBuffer.putArray(callSignBytes)
+    // @formatter:off
+
+    return cobsBuffer.getCobs()
 }
 
 /**
