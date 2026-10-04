@@ -13,7 +13,10 @@ class RootStore {
         private set
 
     fun landing() = setState { copy(screen = Screen.Landing, connectTo = null) }
-    fun connected(device: GaTasDevice) = setState { copy(screen = Screen.Connected, connectTo = device) }
+    fun connected(device: GaTasDevice) {
+        KnownDeviceStore.saveLastUsedDevice(device)
+        setState { copy(screen = Screen.Connected, connectTo = device) }
+    }
     fun blueTooth() = setState { copy(screen = Screen.BlueTooth, connectTo = null) }
     fun settings() = setState { copy(screen = Screen.Settings, connectTo = null) }
     fun setGdl90BridgeEnabled(enabled: Boolean) {
@@ -24,14 +27,21 @@ class RootStore {
 
     fun deleteItem(device: GaTasDevice) =
         setState {
-            copy(devices = devices.filterNot { it.identifier == device.identifier }.toSet())
+            val updated = devices.filterNot { it.identifier == device.identifier }.toSet()
+            KnownDeviceStore.saveDevices(updated)
+            if (KnownDeviceStore.loadLastUsedDevice()?.identifier == device.identifier) {
+                KnownDeviceStore.saveLastUsedDevice(null)
+            }
+            copy(devices = updated)
         }
 
     fun addItem(add: GaTasDevice) {
         log.i { "Device added: ${add.name}" }
 
         setState {
-            copy(devices = devices + add)
+            val updated = devices + add
+            KnownDeviceStore.saveDevices(updated)
+            copy(devices = updated)
         }
     }
 
@@ -39,7 +49,7 @@ class RootStore {
     @OptIn(ExperimentalUuidApi::class)
     private fun initialState(): RootState =
         RootState(
-            devices = setOf(),
+            devices = KnownDeviceStore.loadDevices(),
             screen = Screen.Landing,
             airplanesLiveApiKey = "",
             gdl90BridgeEnabled = Gdl90BridgeSettings.isEnabled()

@@ -39,6 +39,7 @@ fun RootContent(
     val model = remember { RootStore() }
     val state = model.state
     val bridgeStatus by BridgeBackgroundComponent.status.collectAsState()
+    val activeDevice by BridgeBackgroundComponent.activeDevice.collectAsState()
 
     // Required to bind permissions lifecycle to the activity
     BindEffect(permissionsController)
@@ -56,6 +57,15 @@ fun RootContent(
     LaunchedEffect(state.screen, state.connectTo) {
         if (state.screen == Screen.Connected) {
             state.connectTo?.let(BridgeBackgroundComponent::start)
+        }
+    }
+
+    LaunchedEffect(activeDevice) {
+        activeDevice?.let { device ->
+            model.addItem(device)
+            if (model.state.screen != Screen.Connected) {
+                model.connected(device)
+            }
         }
     }
 
@@ -124,7 +134,7 @@ fun RootContent(
                         Screen.BlueTooth -> {
 
                             BlueToothSearchScreen(
-                                onClose = { model::landing },
+                                onClose = model::landing,
                                 onItemClicked = {
                                     model.addItem(it)
                                     model.landing()

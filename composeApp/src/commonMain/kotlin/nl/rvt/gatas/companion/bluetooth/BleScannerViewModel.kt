@@ -88,7 +88,12 @@ class BleScannerViewModel : ViewModel() {
                         }
                     }
             } catch (e: CancellationException) {
-                log.e { "Scanner error ${e.message}" }
+                // Leaving the scan screen cancels collection by design. Let
+                // structured concurrency handle it without reporting a false
+                // scanner failure to the user or to Xcode's debug console.
+                throw e
+            } catch (e: Exception) {
+                log.e(e) { "Bluetooth scanner failed" }
             }
         }
     }
